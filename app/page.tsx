@@ -2,13 +2,13 @@ import Link from "next/link";
 
 const MODULES = [
   { id: "pipeline", title: "Pipeline", href: "/pipeline", live: true },
-  { id: "cs", title: "Customer Success", href: "/cs", live: false },
-  { id: "team", title: "Team Performance", href: "/team", live: false },
-  { id: "initiatives", title: "Strategic Initiatives", href: "/initiatives", live: false },
-  { id: "finserv", title: "FinServ Vertical Intel", href: "/finserv", live: false },
-  { id: "competitive", title: "Competitive Intel", href: "/competitive", live: false },
-  { id: "priorities", title: "Priority Feed", href: "/priorities", live: false },
-  { id: "comms", title: "Exec Communications", href: "/comms", live: false },
+  { id: "cs", title: "Customer Success", href: "/cs", live: true },
+  { id: "team", title: "Team Performance", href: "/team", live: true },
+  { id: "initiatives", title: "Strategic Initiatives", href: "/initiatives", live: true },
+  { id: "finserv", title: "FinServ Vertical Intel", href: "/finserv", live: true },
+  { id: "competitive", title: "Competitive Intel", href: "/competitive", live: true },
+  { id: "priorities", title: "Priority Feed", href: "/priorities", live: true },
+  { id: "comms", title: "Exec Communications", href: "/comms", live: true },
 ];
 
 export default function Home() {
@@ -37,7 +37,7 @@ export default function Home() {
         </pre>
       </section>
 
-      <section className="mt-8 flex gap-3">
+      <section className="mt-8 flex flex-wrap gap-3">
         <Link
           href="/ask"
           className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
@@ -49,6 +49,18 @@ export default function Home() {
           className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:border-blue-400"
         >
           Briefings →
+        </Link>
+        <Link
+          href="/notifications"
+          className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:border-blue-400"
+        >
+          Notifications →
+        </Link>
+        <Link
+          href="/status"
+          className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:border-blue-400"
+        >
+          Status →
         </Link>
       </section>
 
