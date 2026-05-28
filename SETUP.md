@@ -58,6 +58,18 @@ WHERE table_schema = 'public' ORDER BY table_name;
 
 You should see 12 tables.
 
+### Optional: seed sample data
+
+```bash
+npm run seed
+```
+
+Inserts ~15 realistic envelopes spanning all 8 modules (Aurora Bank deal,
+Meridian Trust health risk, Liberty Federal Blue Prism competitive, FedRAMP
+initiative blocker, NYDFS regulatory mention, etc.) so the dashboards
+populate immediately. Idempotent — safe to re-run. Detectors only fire if
+Inngest is also processing events; see the script's final note.
+
 ---
 
 ## 3. Provision Vercel + Inngest

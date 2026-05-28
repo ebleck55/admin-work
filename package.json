@@ -12,6 +12,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
+    "seed": "tsx scripts/db/seed.ts",
     "inngest:dev": "npx inngest-cli@latest dev",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -38,6 +39,7 @@
     "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.4.0",
     "drizzle-kit": "^0.28.0",
+    "tsx": "^4.19.0",
     "eslint": "^9.0.0",
     "eslint-config-next": "^15.1.0",
     "postcss": "^8.4.0",
