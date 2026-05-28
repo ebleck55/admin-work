@@ -17,6 +17,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      - run: npm test
       - run: npm run build
         env:
           # Stub envs so the build doesn't fail on validate-on-import.
