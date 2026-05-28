@@ -16,7 +16,8 @@ End-to-end checklist to bring the prototype online for the first time.
 - A Neon account.
 - An Inngest account.
 - An Anthropic API key (with sufficient quota for Opus 4.7).
-- An OpenAI API key (embeddings only — minimal spend).
+- A Gemini API key (used for both fallback model + embeddings via
+  `gemini-embedding-001`, truncated to 1536 dims via MRL).
 - A Google Cloud project with the **Text-to-Speech API** enabled and an
   API key restricted to that API.
 - Vercel Blob (created from the Vercel dashboard).
@@ -106,8 +107,8 @@ In **Vercel → Settings → Environment Variables**, set (all environments):
 |---|---|
 | `DATABASE_URL` | Neon pooled connection string |
 | `ANTHROPIC_API_KEY` | Anthropic console → API keys |
-| `OPENAI_API_KEY` | OpenAI dashboard → API keys |
-| `GEMINI_API_KEY` | _(optional; fallback only)_ |
+| `GEMINI_API_KEY` | Google AI Studio → API keys (used for embeddings + LLM fallback) |
+| `OPENAI_API_KEY` | _(optional — only set if you re-introduce OpenAI calls)_ |
 | `GOOGLE_TTS_API_KEY` | GCP API key restricted to Text-to-Speech |
 | `COS_INGEST_TOKEN` | Generate: `openssl rand -base64 32` |
 | `CRON_SECRET` | Generate: `openssl rand -base64 32` |

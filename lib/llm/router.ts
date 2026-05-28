@@ -61,12 +61,12 @@ export const MODELS = {
     costPerMtokInput: 0.15,
     costPerMtokOutput: 0.6,
   },
-  embedSmall: {
-    provider: "openai",
-    id: "text-embedding-3-small",
-    label: "OpenAI text-embedding-3-small",
+  geminiEmbed: {
+    provider: "google",
+    id: "gemini-embedding-001",
+    label: "Gemini Embedding 001",
     maxOutputTokens: 0,
-    costPerMtokInput: 0.02,
+    costPerMtokInput: 0.15,
     costPerMtokOutput: 0,
   },
 } as const satisfies Record<string, ModelConfig>;

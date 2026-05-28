@@ -4,8 +4,8 @@ const EnvSchema = z.object({
   DATABASE_URL: z.string().url(),
 
   ANTHROPIC_API_KEY: z.string().min(1),
-  GEMINI_API_KEY: z.string().min(1).optional(),
-  OPENAI_API_KEY: z.string().min(1),
+  GEMINI_API_KEY: z.string().min(1),
+  OPENAI_API_KEY: z.string().min(1).optional(),
 
   GOOGLE_TTS_API_KEY: z.string().min(1).optional(),
 

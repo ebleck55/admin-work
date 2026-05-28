@@ -1,23 +1,29 @@
 /**
- * Embedding generation via OpenAI text-embedding-3-small (1536 dimensions).
+ * Embedding generation via Google's gemini-embedding-001 (1536 dimensions via MRL).
  *
- * Net-new for COS (audit row 15). Bart has no embeddings; learning apps don't either.
- * We keep the wrapper thin: batched calls, retry on transient errors, cost tracking.
+ * Originally `text-embedding-3-small` from OpenAI; swapped to Gemini in May 2026 when
+ * Eric's account lacked OpenAI access. Matryoshka Representation Learning lets us
+ * truncate to 1536 dims to match the existing pgvector column without a schema change.
+ *
+ * Gemini embeddings are unit-normalized, so cosine distance over them is equivalent
+ * to Euclidean — the schema's HNSW vector_cosine_ops index works unchanged.
  */
 
-import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 import { env } from "@/lib/env";
 import { recordGlobalUsage, type CostTracker } from "@/lib/llm/cost-tracker";
 
-const MODEL_KEY = "embedSmall" as const;
-const MODEL_ID = "text-embedding-3-small";
+const MODEL_KEY = "geminiEmbed" as const;
+const MODEL_ID = "gemini-embedding-001";
 const DIMENSIONS = 1536;
 
-let client: OpenAI | null = null;
-function openai(): OpenAI {
+let client: GoogleGenerativeAI | null = null;
+function googleClient(): GoogleGenerativeAI {
   if (client) return client;
-  client = new OpenAI({ apiKey: env().OPENAI_API_KEY });
+  const key = env().GEMINI_API_KEY;
+  if (!key) throw new Error("GEMINI_API_KEY required for embeddings");
+  client = new GoogleGenerativeAI(key);
   return client;
 }
 
@@ -28,28 +34,37 @@ export interface EmbeddingOptions {
 
 /**
  * Generate embeddings for one or more strings. Returns vectors in the same order.
+ * Token usage is approximated from input character length (Gemini's batch API
+ * doesn't return per-request token counts; ~4 chars ≈ 1 token).
  */
 export async function embed(
   inputs: string[],
   opts: EmbeddingOptions = {},
 ): Promise<number[][]> {
   if (inputs.length === 0) return [];
-  const response = await openai().embeddings.create(
-    {
-      model: MODEL_ID,
-      input: inputs,
-      dimensions: DIMENSIONS,
-    },
-    { signal: opts.signal },
+  void opts.signal; // SDK doesn't accept AbortSignal; documented limitation
+
+  const model = googleClient().getGenerativeModel({ model: MODEL_ID });
+
+  const response = await model.batchEmbedContents({
+    requests: inputs.map((text) => ({
+      content: { role: "user", parts: [{ text }] },
+      outputDimensionality: DIMENSIONS,
+    })),
+  });
+
+  const approxTokens = Math.ceil(
+    inputs.reduce((sum, t) => sum + t.length, 0) / 4,
   );
   const usage = {
     modelKey: MODEL_KEY,
-    inputTokens: response.usage.prompt_tokens,
+    inputTokens: approxTokens,
     outputTokens: 0,
   };
   if (opts.costTracker) opts.costTracker.record(usage);
   else recordGlobalUsage(usage);
-  return response.data.map((d) => d.embedding);
+
+  return response.embeddings.map((e) => e.values);
 }
 
 /**

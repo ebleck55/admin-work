@@ -24,5 +24,5 @@ jobs:
           # The app never makes network calls during `next build`.
           DATABASE_URL: postgresql://stub:stub@localhost/stub
           ANTHROPIC_API_KEY: stub
-          OPENAI_API_KEY: stub
+          GEMINI_API_KEY: stub
           COS_INGEST_TOKEN: stubstubstubstubstub
