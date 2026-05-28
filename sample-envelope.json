@@ -1,0 +1,39 @@
+{
+  "source_system": "context_note",
+  "source_id": "sample-2026-05-28-001",
+  "source_url": "https://example.com/note/sample-2026-05-28-001",
+  "collected_at": "2026-05-28T12:00:00.000Z",
+  "source_timestamp": "2026-05-28T11:45:00.000Z",
+  "actor": "eric.bouchard@uipath.com",
+  "sensitivity": "internal",
+  "entities": [
+    { "kind": "account", "name": "Sample Bank", "external_id": "ACC-001" },
+    { "kind": "opportunity", "name": "Sample Bank — Q3 Expansion", "external_id": "OPP-001" }
+  ],
+  "claims": [
+    {
+      "statement": "Sample Bank's CISO requested a SOC 2 Type 2 letter before next quarter.",
+      "module_id": "pipeline",
+      "entity_ref": { "kind": "account", "name": "Sample Bank" },
+      "confidence": 0.85
+    },
+    {
+      "statement": "Procurement asked about the FedRAMP roadmap for the FS vertical.",
+      "module_id": "finserv",
+      "entity_ref": { "kind": "account", "name": "Sample Bank" },
+      "confidence": 0.7
+    }
+  ],
+  "evidence": [
+    {
+      "claim_index": 0,
+      "quote": "We'll need the SOC 2 Type 2 letter in hand before we can move this to legal review next quarter — please confirm by Friday."
+    },
+    {
+      "claim_index": 1,
+      "quote": "Procurement is curious about FedRAMP — is that on the roadmap for FS?"
+    }
+  ],
+  "confidence": 0.78,
+  "raw_text": "Meeting notes from Sample Bank security review. CISO confirmed they need the SOC 2 Type 2 letter before legal review next quarter. Procurement asked about FedRAMP roadmap for the FS vertical. Action items: send SOC 2 letter, draft FedRAMP one-pager."
+}
