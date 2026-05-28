@@ -50,10 +50,22 @@ async function moveToDated(file, kind) {
 
 async function upload(file) {
   const body = await fsp.readFile(file, "utf8");
-  const res = await fetch(`${COS_URL}/api/ingest`, {
+  const lower = file.toLowerCase();
+  let url, contentType;
+  if (lower.endsWith(".csv")) {
+    // Salesforce pipeline CSV → batch envelope endpoint
+    const stat = await fsp.stat(file);
+    const fileDate = stat.mtime.toISOString().slice(0, 10);
+    url = `${COS_URL}/api/ingest/csv?file_date=${fileDate}`;
+    contentType = "text/csv";
+  } else {
+    url = `${COS_URL}/api/ingest`;
+    contentType = "application/json";
+  }
+  const res = await fetch(url, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": contentType,
       Authorization: `Bearer ${TOKEN}`,
     },
     body,
@@ -71,8 +83,8 @@ async function processFile(file) {
     await new Promise((r) => setTimeout(r, FILE_SETTLE_MS));
     const stats = await fsp.stat(file).catch(() => null);
     if (!stats || !stats.isFile()) return;
-    if (!file.endsWith(".json")) {
-      console.log(`[cos-sync] skipping non-json: ${path.basename(file)}`);
+    if (!file.endsWith(".json") && !file.endsWith(".csv")) {
+      console.log(`[cos-sync] skipping unsupported file: ${path.basename(file)}`);
       return;
     }
     console.log(`[cos-sync] uploading: ${path.basename(file)}`);

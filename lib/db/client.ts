@@ -1,9 +1,7 @@
-import { neon, neonConfig } from "@neondatabase/serverless";
+import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import { env } from "@/lib/env";
 import * as schema from "@/lib/db/schema";
-
-neonConfig.fetchConnectionCache = true;
 
 let cached: ReturnType<typeof drizzle> | null = null;
 
