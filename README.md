@@ -18,6 +18,10 @@ Next.js 15 (App Router) · TypeScript · Drizzle ORM · Neon Postgres + pgvector
 
 The implementation plan lives at `/root/.claude/plans/chief-of-staff-delegated-sphinx.md` (planning environment) and is the source of truth for module contracts, the canonical payload envelope, and the reuse maps for the Bart and Learning Quest patterns this codebase ports.
 
+## First-time setup
+
+See **[SETUP.md](./SETUP.md)** — provisioning Neon, Vercel, Inngest, Google Cloud TTS, env vars, and the smoke test.
+
 ## Local development
 
 ```bash
