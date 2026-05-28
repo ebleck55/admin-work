@@ -37,6 +37,21 @@ export default function Home() {
         </pre>
       </section>
 
+      <section className="mt-8 flex gap-3">
+        <Link
+          href="/ask"
+          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+        >
+          Ask anything →
+        </Link>
+        <Link
+          href="/briefings"
+          className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:border-blue-400"
+        >
+          Briefings →
+        </Link>
+      </section>
+
       <section className="mt-8 grid gap-4 sm:grid-cols-2">
         {MODULES.map((m) =>
           m.live ? (
