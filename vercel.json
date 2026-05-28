@@ -1,0 +1,19 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/preload",
+      "schedule": "0 11 * * *"
+    }
+  ],
+  "functions": {
+    "app/api/cron/preload/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/inngest/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/chat/stream/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}

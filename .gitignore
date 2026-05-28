@@ -1,0 +1,15 @@
+node_modules
+.next
+.vercel
+.env
+.env.local
+.env*.local
+*.log
+.DS_Store
+dist
+build
+coverage
+.vitest
+.turbo
+.eslintcache
+next-env.d.ts
