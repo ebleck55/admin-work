@@ -2,6 +2,7 @@ import Link from "next/link";
 import { desc } from "drizzle-orm";
 
 import { db, schema } from "@/lib/db/client";
+import { MarkReadButton } from "@/components/MarkReadButton";
 
 export const dynamic = "force-dynamic";
 
@@ -61,16 +62,19 @@ export default async function NotificationsPage() {
                   {n.severity}
                 </span>
                 <span className="text-xs opacity-60">
-                  {new Date(n.createdAt).toLocaleString()} {n.readAt ? " · read" : ""}
+                  {new Date(n.createdAt).toLocaleString()}
                 </span>
               </div>
               <div className="mt-1 text-sm font-medium">{n.title}</div>
               <div className="text-sm opacity-80">{n.body}</div>
-              {n.href ? (
-                <Link href={n.href} className="mt-1 inline-block text-xs underline">
-                  View →
-                </Link>
-              ) : null}
+              <div className="mt-2 flex items-center gap-3">
+                {n.href ? (
+                  <Link href={n.href} className="text-xs underline">
+                    View →
+                  </Link>
+                ) : null}
+                <MarkReadButton id={n.id} alreadyRead={n.readAt !== null} />
+              </div>
             </li>
           ))}
         </ul>
