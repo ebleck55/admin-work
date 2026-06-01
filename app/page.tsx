@@ -57,6 +57,12 @@ export default function Home() {
           Notifications →
         </Link>
         <Link
+          href="/accounts"
+          className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:border-blue-400"
+        >
+          Accounts →
+        </Link>
+        <Link
           href="/status"
           className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:border-blue-400"
         >

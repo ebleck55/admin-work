@@ -12,6 +12,7 @@ import { and, eq } from "drizzle-orm";
 
 import { db, schema } from "@/lib/db/client";
 import type { PayloadEnvelope } from "@/lib/ingestion/envelope";
+import { namesMatch } from "@/lib/entities/normalize";
 import { redactPii } from "@/lib/llm/safety";
 
 export interface LedgerWriteResult {
@@ -103,16 +104,17 @@ export async function writeEnvelope(env: PayloadEnvelope): Promise<LedgerWriteRe
     documentId = inserted[0].id;
   }
 
-  // Resolve or create stub entities; envelope.entities is hints, not authoritative
+  // Resolve or create stub entities. Uses fuzzy name matching (lib/entities/normalize)
+  // so "Chubb" and "Chubb INA Holdings Inc." resolve to the same entity row.
   const entityIds: string[] = [];
   for (const ent of env.entities) {
-    const found = await database
-      .select({ id: schema.entities.id })
+    const sameKind = await database
+      .select({ id: schema.entities.id, name: schema.entities.name })
       .from(schema.entities)
-      .where(and(eq(schema.entities.kind, ent.kind), eq(schema.entities.name, ent.name)))
-      .limit(1);
-    if (found.length > 0) {
-      entityIds.push(found[0].id);
+      .where(eq(schema.entities.kind, ent.kind));
+    const match = sameKind.find((c) => namesMatch(c.name, ent.name));
+    if (match) {
+      entityIds.push(match.id);
       continue;
     }
     const created = await database

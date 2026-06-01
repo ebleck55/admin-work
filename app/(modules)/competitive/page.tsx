@@ -1,7 +1,12 @@
-import { ModuleDashboard } from "@/components/ModuleDashboard";
+import { ModuleDashboard, type SignalFilterParams } from "@/components/ModuleDashboard";
 
 export const dynamic = "force-dynamic";
 
-export default function Page() {
-  return <ModuleDashboard moduleId="competitive" />;
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<SignalFilterParams>;
+}) {
+  const filters = await searchParams;
+  return <ModuleDashboard moduleId="competitive" filters={filters} />;
 }

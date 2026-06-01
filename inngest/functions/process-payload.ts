@@ -4,12 +4,14 @@
  * Triggered by `ingestion/payload.received`. Steps:
  *   1. Mark the ledger row processed
  *   2. Hydrate envelope + claims from the DB
- *   3. For each matching module, run signal detectors and persist signals
- *   4. Send in-app notifications for high/critical signals
- *   5. Fire alerts/scan.requested for downstream sweeps
+ *   3. Run the LLM grader (Sonnet 4.6) — produces a curated signal list per envelope
+ *   4. Fall back to per-module heuristic detectors only if the grader returns
+ *      nothing AND the envelope is marked salesforce (deterministic data — the
+ *      grader has nothing to add over keyword detectors there)
+ *   5. Persist signals + fire in-app notifications for high/critical
  *
- * Embedding (Phase 2) attaches in a separate Inngest function so re-embedding
- * doesn't require replaying the whole pipeline.
+ * Embedding (Phase 2) runs in a separate Inngest function listening on the
+ * same event — they fan out in parallel.
  */
 
 import { eq } from "drizzle-orm";
@@ -19,9 +21,11 @@ import { inngest } from "@/inngest/client";
 import { allModules } from "@/lib/modules/registry";
 import { PayloadEnvelope, type Claim } from "@/lib/ingestion/envelope";
 import { persistSignals, notifyForSignals } from "@/lib/signals/persist";
+import { gradeEnvelope } from "@/lib/signals/grader";
+import type { ModuleId, SignalCandidate } from "@/lib/modules/types";
 
 export const processPayload = inngest.createFunction(
-  { id: "process-payload", retries: 3 },
+  { id: "process-payload", retries: 3, concurrency: { limit: 4 } },
   { event: "ingestion/payload.received" },
   async ({ event, step }) => {
     const { ledgerId } = event.data;
@@ -50,8 +54,6 @@ export const processPayload = inngest.createFunction(
         .where(eq(schema.claims.ledgerId, ledgerId));
     });
 
-    // The envelope is the raw_payload JSON; reparsing it gives us the entity refs
-    // needed by detectors. Tolerate schema drift on old rows.
     const envelope = ledgerRow.rawPayload as unknown as PayloadEnvelope;
 
     const claimsForDetectors = claimRows.map((r) => ({
@@ -63,11 +65,19 @@ export const processPayload = inngest.createFunction(
       confidence: r.confidence,
     }));
 
-    // Backfill entity_ref on each claim by hydrating from the entities table
+    // Hydrate entity_ref on each claim from the entities table
     await step.run("hydrate-entity-refs", async () => {
-      const entityIds = claimRows.map((r) => r.entityId).filter((id): id is string => !!id);
+      const entityIds = claimRows
+        .map((r) => r.entityId)
+        .filter((id): id is string => !!id);
       if (entityIds.length === 0) return;
-      const entityMap = new Map<string, { kind: typeof claimRows[number] extends never ? never : "account" | "opportunity" | "contact" | "rep" | "initiative" | "competitor"; name: string }>();
+      const entityMap = new Map<
+        string,
+        {
+          kind: "account" | "opportunity" | "contact" | "rep" | "initiative" | "competitor";
+          name: string;
+        }
+      >();
       for (const e of await db().select().from(schema.entities)) {
         if (entityIds.includes(e.id)) entityMap.set(e.id, { kind: e.kind, name: e.name });
       }
@@ -79,35 +89,67 @@ export const processPayload = inngest.createFunction(
       }
     });
 
-    const allSignalsPersisted: Array<{ id: string; kind: string; severity: string; title: string }> = [];
+    // ---- LLM grader (primary path) ----
+    const gradedCandidates = await step.run("grade-signals", async () =>
+      gradeEnvelope({ envelope, claims: claimsForDetectors }),
+    );
 
-    for (const mod of allModules()) {
-      if (!mod.envelopeFilter(envelope)) continue;
-      const candidates = (
-        await Promise.all(
-          mod.signalDetectors.map((det) =>
-            det({ envelope, claims: claimsForDetectors }),
-          ),
-        )
-      ).flat();
-      if (candidates.length === 0) continue;
-      const persisted = await step.run(`persist-signals-${mod.id}`, async () => {
-        const rows = await persistSignals(candidates, mod.id);
-        await notifyForSignals(rows);
-        return rows;
+    // ---- Heuristic fallback (only when grader returned nothing) ----
+    let fallbackCandidates: Array<{ moduleId: ModuleId; candidates: SignalCandidate[] }> = [];
+    if (gradedCandidates.length === 0) {
+      fallbackCandidates = await step.run("run-heuristic-fallback", async () => {
+        const out: Array<{ moduleId: ModuleId; candidates: SignalCandidate[] }> = [];
+        for (const mod of allModules()) {
+          if (!mod.envelopeFilter(envelope)) continue;
+          const cands = (
+            await Promise.all(
+              mod.signalDetectors.map((det) =>
+                det({ envelope, claims: claimsForDetectors }),
+              ),
+            )
+          ).flat();
+          if (cands.length > 0) out.push({ moduleId: mod.id, candidates: cands });
+        }
+        return out;
       });
-      allSignalsPersisted.push(...persisted);
     }
 
-    await step.sendEvent("request-alerts-scan", {
-      name: "alerts/scan.requested",
-      data: { since: new Date().toISOString() },
-    });
+    // ---- Persist ----
+    const allPersisted: Array<{ id: string; kind: string; severity: string; title: string }> = [];
+
+    if (gradedCandidates.length > 0) {
+      // Group grader output by module
+      const byModule = new Map<ModuleId, SignalCandidate[]>();
+      for (const c of gradedCandidates) {
+        const mod = (c.attributes?.module_id_graded as ModuleId) ?? "priorities";
+        const list = byModule.get(mod) ?? [];
+        list.push(c);
+        byModule.set(mod, list);
+      }
+      for (const [mod, cands] of byModule.entries()) {
+        const persisted = await step.run(`persist-graded-${mod}`, async () => {
+          const rows = await persistSignals(cands, mod);
+          await notifyForSignals(rows);
+          return rows;
+        });
+        allPersisted.push(...persisted);
+      }
+    } else {
+      for (const { moduleId, candidates } of fallbackCandidates) {
+        const persisted = await step.run(`persist-fallback-${moduleId}`, async () => {
+          const rows = await persistSignals(candidates, moduleId);
+          await notifyForSignals(rows);
+          return rows;
+        });
+        allPersisted.push(...persisted);
+      }
+    }
 
     return {
       ledgerId,
-      signalsDetected: allSignalsPersisted.length,
-      signalIds: allSignalsPersisted.map((s) => s.id),
+      signalsDetected: allPersisted.length,
+      mode: gradedCandidates.length > 0 ? "graded" : "heuristic",
+      signalIds: allPersisted.map((s) => s.id),
     };
   },
 );
