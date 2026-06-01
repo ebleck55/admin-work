@@ -1,54 +1,59 @@
 /**
- * LLM-driven signal grader.
+ * LLM-driven signal grader (Sonnet 4.6 via tool-use).
  *
- * The Phase-1 detectors are keyword heuristics — they fire on any "Pega" mention
- * regardless of whether the email said "we lost to Pega" or "we beat Pega". That
- * floods dashboards with low-value signals.
+ * Strategy: instead of asking the model to produce JSON in its text output and
+ * parsing it post-hoc (fragile — fields drift, summaries overshoot length caps),
+ * we declare a `report_signals` tool whose `input_schema` is the canonical
+ * structured contract. Sonnet calls the tool with arguments that already
+ * conform — that's the entire point of tool use for structured outputs.
  *
- * This grader takes an envelope + its claims and asks Sonnet 4.6:
- *   "Given the full context, which of these are signals Eric actually needs to
- *    see? What kind? What severity? Why?"
- *
- * One call per envelope (not per claim), keeping cost predictable: ~$0.01-0.02
- * per envelope at typical sizes.
- *
- * Output is structured JSON validated by Zod. Failures are non-fatal — the
- * pipeline continues with no signals for the bad envelope.
+ * Cost: ~$0.01-0.02 per envelope. ~$5-10 to backfill 500 envelopes.
  */
 
+import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 
-import { callClaudeWithRetry } from "@/lib/llm/retry";
+import { callClaude } from "@/lib/llm/anthropic";
 import { systemPromptFor } from "@/lib/prompts/system";
 import { varietySeed } from "@/lib/prompts/variety";
 import type { PayloadEnvelope, Claim } from "@/lib/ingestion/envelope";
 import type { ModuleId, SignalCandidate } from "@/lib/modules/types";
 
+const MODULE_IDS = [
+  "pipeline",
+  "cs",
+  "team",
+  "initiatives",
+  "finserv",
+  "competitive",
+  "priorities",
+  "comms",
+] as const;
+
+const SIGNAL_KINDS = [
+  "deal_risk",
+  "expansion_opp",
+  "churn_indicator",
+  "coaching_moment",
+  "regulatory_signal",
+  "competitive_mention",
+  "commitment",
+  "escalation",
+] as const;
+
+const SEVERITIES = ["low", "medium", "high", "critical"] as const;
+
+/**
+ * Zod schema validates what the tool call delivered. Tool use makes structural
+ * conformance very likely, but we still validate defensively.
+ */
 const GradedSignalSchema = z.object({
-  module_id: z.enum([
-    "pipeline",
-    "cs",
-    "team",
-    "initiatives",
-    "finserv",
-    "competitive",
-    "priorities",
-    "comms",
-  ]),
-  kind: z.enum([
-    "deal_risk",
-    "expansion_opp",
-    "churn_indicator",
-    "coaching_moment",
-    "regulatory_signal",
-    "competitive_mention",
-    "commitment",
-    "escalation",
-  ]),
-  severity: z.enum(["low", "medium", "high", "critical"]),
-  title: z.string().min(1).max(180),
-  summary: z.string().min(1).max(500),
-  reasoning: z.string().min(1).max(500),
+  module_id: z.enum(MODULE_IDS),
+  kind: z.enum(SIGNAL_KINDS),
+  severity: z.enum(SEVERITIES),
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  reasoning: z.string().min(1),
   claim_indices: z.array(z.number().int().nonnegative()).min(1),
 });
 
@@ -56,26 +61,75 @@ const GraderResponseSchema = z.object({
   signals: z.array(GradedSignalSchema),
 });
 
-type GradedSignal = z.infer<typeof GradedSignalSchema>;
+const REPORT_SIGNALS_TOOL: Anthropic.Tool = {
+  name: "report_signals",
+  description:
+    "Report graded signals derived from the supplied claims. Call this exactly once. Pass an empty array if no claim crosses the bar for actionability.",
+  input_schema: {
+    type: "object",
+    properties: {
+      signals: {
+        type: "array",
+        description: "Curated, actionable signals only. Empty array is acceptable.",
+        items: {
+          type: "object",
+          properties: {
+            module_id: {
+              type: "string",
+              enum: [...MODULE_IDS],
+              description: "Which COS module does this signal belong to?",
+            },
+            kind: {
+              type: "string",
+              enum: [...SIGNAL_KINDS],
+              description: "Signal type. Use the closest match.",
+            },
+            severity: {
+              type: "string",
+              enum: [...SEVERITIES],
+              description:
+                "critical: blocker, regulator-driven deadline, immediate action. high: needs action this week. medium: worth knowing, not blocking. low: informational.",
+            },
+            title: {
+              type: "string",
+              description: "One-line headline, <= 180 chars. Lead with what changed or what's at risk.",
+            },
+            summary: {
+              type: "string",
+              description:
+                "1-3 sentences explaining the signal. Cite specific entities, amounts, dates from the evidence. Avoid restating the title.",
+            },
+            reasoning: {
+              type: "string",
+              description:
+                "Why this crossed the actionability bar (vs noise). Why this severity. <= 400 chars.",
+            },
+            claim_indices: {
+              type: "array",
+              items: { type: "integer", minimum: 0 },
+              description: "Indices of the claims (from the supplied list) that contributed to this signal. At least one.",
+            },
+          },
+          required: ["module_id", "kind", "severity", "title", "summary", "reasoning", "claim_indices"],
+        },
+      },
+    },
+    required: ["signals"],
+  },
+};
+
+const SYSTEM_EXTRA = `
+GRADING RULES:
+- A claim becomes a signal ONLY if it would change what Eric does this week. "Pega is a competitor" is not a signal; "Customer cited Pega as the lead alternative they're evaluating" is.
+- Suppress noise: stage-change claims at expected positions, vanilla financial fields with no anomaly, regulatory-term name-drops with no actual concern, commitments that are restatements of prior commitments.
+- Group related claims into a single signal where appropriate.
+- Use the report_signals tool exactly once. Empty signals array is fine if nothing crosses the bar.
+`.trim();
 
 export interface GradeInput {
   envelope: PayloadEnvelope;
   claims: Array<Claim & { id: string }>;
 }
-
-const SYSTEM_EXTRA = `
-GRADING RULES:
-- A claim becomes a signal ONLY if it would change what Eric does this week. "Pega is a competitor" is not a signal; "Customer cited Pega as the lead alternative they're evaluating" is.
-- Suppress noise: stage-change claims for deals at expected positions, generic financial fields with no anomaly, regulatory-term name-drops with no actual concern, commitments that are restatements of prior commitments.
-- Severity calibration:
-    critical = immediate action required (escalation from CEO, blocker for board prep, regulator-driven deadline)
-    high     = needs action this week (churn risk surfaced, deal slipping, committed deliverable due in days)
-    medium   = worth knowing but not blocking (expansion mention, generic regulatory signal, competitive mention)
-    low      = informational (background context, weak signals)
-- Group related claims into a single signal where appropriate. Cite the claim_indices that contributed.
-- Output ONLY a JSON object: { "signals": [ ... ] }. No prose, no markdown fences.
-- If no claim crosses the bar, return { "signals": [] }.
-`.trim();
 
 function buildUserPrompt(input: GradeInput): string {
   const { envelope, claims } = input;
@@ -104,45 +158,55 @@ function buildUserPrompt(input: GradeInput): string {
     ? `\n\nRAW TEXT (first 1500 chars):\n${envelope.raw_text.slice(0, 1500)}`
     : "";
 
-  return `${ctx}
-
-CLAIMS:
-${claimLines}${rawSnippet}
-
-Grade these claims per the rules. Output JSON only.`;
+  return `${ctx}\n\nCLAIMS:\n${claimLines}${rawSnippet}\n\nCall report_signals with the curated list. Return an empty signals array if no claim crosses the actionability bar.`;
 }
 
 export async function gradeEnvelope(input: GradeInput): Promise<SignalCandidate[]> {
   if (input.claims.length === 0) return [];
 
-  const result = await callClaudeWithRetry({
-    modelKey: "sonnet46",
-    system: systemPromptFor({ mode: "extract", extra: `${SYSTEM_EXTRA}\n\n${varietySeed()}` }),
-    cacheSystem: true,
-    prompt: buildUserPrompt(input),
-    maxTokens: 1500,
-    purpose: "signal-grader",
-    schema: GraderResponseSchema,
-    maxRetries: 1,
-  }).catch((err) => {
-    console.error("[grader] failed:", err instanceof Error ? err.message : err);
-    return { signals: [] as GradedSignal[] };
-  });
+  let result;
+  try {
+    result = await callClaude({
+      modelKey: "sonnet46",
+      system: systemPromptFor({ mode: "extract", extra: `${SYSTEM_EXTRA}\n\n${varietySeed()}` }),
+      cacheSystem: true,
+      prompt: buildUserPrompt(input),
+      maxTokens: 4096,
+      purpose: "signal-grader",
+      tools: [REPORT_SIGNALS_TOOL],
+      toolChoice: { type: "tool", name: "report_signals" },
+    });
+  } catch (err) {
+    console.error("[grader] API failed:", err instanceof Error ? err.message : err);
+    return [];
+  }
+
+  // Find the report_signals tool call
+  const toolCall = result.toolUseCalls.find((t) => t.name === "report_signals");
+  if (!toolCall) {
+    console.error("[grader] no report_signals tool call in response");
+    return [];
+  }
+
+  const parsed = GraderResponseSchema.safeParse(toolCall.input);
+  if (!parsed.success) {
+    console.error("[grader] zod validation failed:", parsed.error.issues.slice(0, 3));
+    return [];
+  }
 
   const candidates: SignalCandidate[] = [];
-  for (const g of result.signals) {
+  for (const g of parsed.data.signals) {
     const linkedClaimIds = g.claim_indices
       .filter((i) => i < input.claims.length)
       .map((i) => input.claims[i].id);
     if (linkedClaimIds.length === 0) continue;
 
-    // Best-effort entity: take the entity_ref from the first contributing claim
     const firstClaim = input.claims[g.claim_indices[0]];
     candidates.push({
       kind: g.kind,
       severity: g.severity,
-      title: g.title,
-      summary: g.summary,
+      title: g.title.slice(0, 200),
+      summary: g.summary.slice(0, 1000),
       entityName: firstClaim?.entity_ref?.name,
       entityKind: firstClaim?.entity_ref?.kind,
       claimIds: linkedClaimIds,
@@ -152,4 +216,4 @@ export async function gradeEnvelope(input: GradeInput): Promise<SignalCandidate[
   return candidates;
 }
 
-export { type ModuleId, type GradedSignal };
+export { type ModuleId };

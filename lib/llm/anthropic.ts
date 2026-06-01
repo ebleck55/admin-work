@@ -42,6 +42,11 @@ export interface ClaudeCallOptions {
   maxTokens?: number;
   temperature?: number;
   tools?: Tool[];
+  /** Force the model's tool choice (default is auto). */
+  toolChoice?:
+    | { type: "auto" }
+    | { type: "any" }
+    | { type: "tool"; name: string };
   /** When true, mark tool definitions with cache_control:ephemeral. */
   cacheTools?: boolean;
   costTracker?: CostTracker;
@@ -107,6 +112,7 @@ export async function callClaude(opts: ClaudeCallOptions): Promise<ClaudeCallRes
         system: systemPart as never,
         messages,
         tools,
+        tool_choice: opts.toolChoice as never,
       },
       { signal: opts.signal },
     );
