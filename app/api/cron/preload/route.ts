@@ -13,7 +13,7 @@ import { inngest } from "@/inngest/client";
  * of inside the cron's 5-minute budget.
  */
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function GET(req: NextRequest) {
   const expected = env().CRON_SECRET;
