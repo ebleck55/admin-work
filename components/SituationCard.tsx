@@ -83,12 +83,20 @@ export function SituationCard({ situation }: { situation: SituationCardData }) {
             </Link>
           ) : null}
         </div>
-        <Link
-          href={`/situations/${situation.id}`}
-          className="text-xs text-slate-500 hover:text-slate-800"
-        >
-          Open →
-        </Link>
+        <div className="flex items-center gap-2 text-xs">
+          <Link
+            href={`/chat/from-situation/${situation.id}`}
+            className="rounded-md bg-blue-600 px-2 py-1 font-medium text-white hover:bg-blue-700"
+          >
+            Ask Claude →
+          </Link>
+          <Link
+            href={`/situations/${situation.id}`}
+            className="text-slate-500 hover:text-slate-800"
+          >
+            Open →
+          </Link>
+        </div>
       </div>
 
       <Link

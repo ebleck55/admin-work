@@ -95,6 +95,14 @@ export default async function SituationDetailPage({
           </span>
         </div>
         <h1 className="mt-2 text-2xl font-semibold text-slate-900">{situation.title}</h1>
+        <div className="mt-4">
+          <Link
+            href={`/chat/from-situation/${situation.id}`}
+            className="inline-block rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            Discuss with Claude →
+          </Link>
+        </div>
       </div>
 
       <section className="mb-8">

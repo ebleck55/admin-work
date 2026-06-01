@@ -237,10 +237,10 @@ export default async function Home() {
 
       <section className="mb-8 flex flex-wrap gap-2 text-xs">
         <Link
-          href="/ask"
+          href="/chat"
           className="rounded-md bg-blue-600 px-3 py-1.5 font-medium text-white hover:bg-blue-700"
         >
-          Ask Claude
+          Chat with Claude
         </Link>
         <Link
           href="/briefings"

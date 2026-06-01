@@ -442,3 +442,79 @@ export const followUps = pgTable(
     completedIdx: index("follow_ups_completed_idx").on(t.completedAt),
   }),
 );
+
+// ---------------------------------------------------------------------------
+// conversations + messages — persistent chat threads (Phase 8)
+// ---------------------------------------------------------------------------
+export const conversations = pgTable(
+  "conversations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    title: text("title").notNull(),
+    seedKind: text("seed_kind"),
+    seedId: uuid("seed_id"),
+    seedContext: text("seed_context"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    updatedAtIdx: index("conversations_updated_at_idx").on(t.updatedAt),
+    seedIdx: index("conversations_seed_idx").on(t.seedKind, t.seedId),
+  }),
+);
+
+export const messageRoleEnum = pgEnum("message_role", ["user", "assistant", "system"]);
+
+export const messages = pgTable(
+  "messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    conversationId: uuid("conversation_id")
+      .references(() => conversations.id, { onDelete: "cascade" })
+      .notNull(),
+    role: messageRoleEnum("role").notNull(),
+    content: text("content").notNull(),
+    retrievalHits: jsonb("retrieval_hits").$type<unknown[]>().default([]).notNull(),
+    memoryHits: jsonb("memory_hits").$type<unknown[]>().default([]).notNull(),
+    usage: jsonb("usage").$type<Record<string, unknown>>().default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    convoCreatedIdx: index("messages_convo_created_idx").on(t.conversationId, t.createdAt),
+  }),
+);
+
+export const memoryKindEnum = pgEnum("memory_kind", [
+  "preference",
+  "entity_fact",
+  "decision",
+  "context",
+]);
+
+export const memoryFacts = pgTable(
+  "memory_facts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kind: memoryKindEnum("kind").notNull(),
+    text: text("text").notNull(),
+    embedding: vector("embedding", { dimensions: 1536 }),
+    sourceConversationId: uuid("source_conversation_id").references(() => conversations.id, {
+      onDelete: "set null",
+    }),
+    sourceMessageId: uuid("source_message_id").references(() => messages.id, {
+      onDelete: "set null",
+    }),
+    sensitivity: sensitivityEnum("sensitivity").default("internal").notNull(),
+    weight: real("weight").default(1.0).notNull(),
+    lastReferencedAt: timestamp("last_referenced_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    kindIdx: index("memory_facts_kind_idx").on(t.kind),
+    embIdx: index("memory_facts_emb_idx").using(
+      "hnsw",
+      sql`${t.embedding} vector_cosine_ops`,
+    ),
+  }),
+);

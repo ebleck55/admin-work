@@ -112,6 +112,14 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
           ← Accounts
         </Link>
         <h1 className="mt-2 text-3xl font-semibold text-slate-900">{data.account.name}</h1>
+        <div className="mt-3">
+          <a
+            href={`/chat/from-account/${data.account.id}`}
+            className="inline-block rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            Discuss this account with Claude →
+          </a>
+        </div>
         {data.account.externalId ? (
           <div className="mt-1 font-mono text-xs text-slate-400">{data.account.externalId}</div>
         ) : null}
