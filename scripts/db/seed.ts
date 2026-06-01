@@ -264,8 +264,52 @@ const ENVELOPES: PayloadEnvelope[] = [
 // Main
 // ---------------------------------------------------------------------------
 
+async function postViaHttp(envelopes: PayloadEnvelope[], baseUrl: string, token: string) {
+  let inserted = 0;
+  let dup = 0;
+  let failed = 0;
+  for (const env of envelopes) {
+    try {
+      const res = await fetch(`${baseUrl}/api/ingest`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(env),
+      });
+      const body = (await res.json()) as { success: boolean; data?: { already_exists: boolean; ledger_id?: string }; error?: string };
+      if (!res.ok || !body.success) {
+        failed += 1;
+        console.error(`  ! ${env.source_system}:${env.source_id} — HTTP ${res.status}: ${body.error ?? "(unknown)"}`);
+        continue;
+      }
+      if (body.data?.already_exists) {
+        dup += 1;
+      } else {
+        inserted += 1;
+        console.log(`  + ${env.source_system}:${env.source_id} → ${body.data?.ledger_id}`);
+      }
+    } catch (err) {
+      failed += 1;
+      console.error(`  ! ${env.source_system}:${env.source_id} — ${err instanceof Error ? err.message : err}`);
+    }
+  }
+  return { inserted, dup, failed };
+}
+
 async function main() {
-  console.log(`Seeding ${ENVELOPES.length} envelopes...`);
+  const baseUrl = process.env.COS_URL;
+  const token = process.env.COS_INGEST_TOKEN;
+
+  if (baseUrl && token) {
+    console.log(`Seeding ${ENVELOPES.length} envelopes via ${baseUrl}/api/ingest (Inngest will fire)...`);
+    const { inserted, dup, failed } = await postViaHttp(ENVELOPES, baseUrl, token);
+    console.log(`\nDone. Inserted: ${inserted}, Duplicates: ${dup}, Failed: ${failed}`);
+    return;
+  }
+
+  console.log(`Seeding ${ENVELOPES.length} envelopes directly to DB (Inngest NOT fired)...`);
 
   // Ensure a user exists
   const userRows = await db().select().from(schema.users).limit(1);
@@ -293,10 +337,8 @@ async function main() {
     }
   }
   console.log(`\nDone. Inserted: ${inserted}, Duplicates: ${dup}`);
-  console.log("\nNote: Inngest events are NOT auto-fired by the seed script.");
-  console.log("If you want signals to populate, either:");
-  console.log("  1) Run `npm run inngest:dev` and re-POST these envelopes via /api/ingest, or");
-  console.log("  2) Manually trigger process-payload for each ledger row via the Inngest dashboard.");
+  console.log("\nNote: Inngest events are NOT auto-fired in this mode.");
+  console.log("To fire Inngest events, set COS_URL + COS_INGEST_TOKEN and re-run.");
 }
 
 void main().then(
