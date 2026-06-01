@@ -7,6 +7,7 @@ import {
   generateBriefing,
   generateAudio,
   synthesizeSituations,
+  generateMeetingPrep,
 } from "@/inngest/functions";
 
 export const runtime = "nodejs";
@@ -20,5 +21,6 @@ export const { GET, POST, PUT } = serve({
     generateBriefing,
     generateAudio,
     synthesizeSituations,
+    generateMeetingPrep,
   ],
 });

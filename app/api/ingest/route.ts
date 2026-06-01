@@ -5,6 +5,7 @@ import { ClientError, withHandler } from "@/lib/api/handler";
 import { inngest } from "@/inngest/client";
 import { parseEnvelope } from "@/lib/ingestion/envelope";
 import { writeEnvelope } from "@/lib/ingestion/ledger";
+import { persistCalendarEvent } from "@/lib/ingestion/source-adapters/outlook-calendar";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -32,6 +33,9 @@ export const POST = withHandler(async (req) => {
 
   const writeResult = await writeEnvelope(parsed.data);
 
+  // Secondary persistence for calendar events
+  const calRes = await persistCalendarEvent(parsed.data);
+
   // Fire Inngest only for new rows so retries don't duplicate downstream work
   if (!writeResult.alreadyExists) {
     await inngest.send({
@@ -46,6 +50,14 @@ export const POST = withHandler(async (req) => {
       },
     });
   }
+  // Calendar prep generates whether the envelope is new or updated — re-runs
+  // on event-edit are valuable
+  if (calRes.calendarEventId) {
+    await inngest.send({
+      name: "calendar/meeting.prep.requested",
+      data: { calendarEventId: calRes.calendarEventId },
+    });
+  }
 
   return {
     ledger_id: writeResult.ledgerId,
@@ -54,6 +66,7 @@ export const POST = withHandler(async (req) => {
     claims: writeResult.claimIds.length,
     entities: writeResult.entityIds.length,
     redactions: writeResult.redactions,
+    calendar_event_id: calRes.calendarEventId,
   };
 });
 

@@ -31,4 +31,7 @@ export type AppEvents = {
   "situations/synthesize.requested": {
     data: { reason?: string };
   };
+  "calendar/meeting.prep.requested": {
+    data: { calendarEventId: string };
+  };
 };
