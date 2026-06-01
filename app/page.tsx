@@ -1,101 +1,295 @@
 import Link from "next/link";
+import { and, asc, desc, eq, gte, inArray, isNull, ne, or, sql } from "drizzle-orm";
+
+import { db, schema } from "@/lib/db/client";
+import { SituationCard, type SituationCardData } from "@/components/SituationCard";
+import { SynthesizeButton } from "@/components/SynthesizeButton";
+
+export const dynamic = "force-dynamic";
 
 const MODULES = [
-  { id: "pipeline", title: "Pipeline", href: "/pipeline", live: true },
-  { id: "cs", title: "Customer Success", href: "/cs", live: true },
-  { id: "team", title: "Team Performance", href: "/team", live: true },
-  { id: "initiatives", title: "Strategic Initiatives", href: "/initiatives", live: true },
-  { id: "finserv", title: "FinServ Vertical Intel", href: "/finserv", live: true },
-  { id: "competitive", title: "Competitive Intel", href: "/competitive", live: true },
-  { id: "priorities", title: "Priority Feed", href: "/priorities", live: true },
-  { id: "comms", title: "Exec Communications", href: "/comms", live: true },
+  { id: "pipeline", title: "Pipeline", href: "/pipeline" },
+  { id: "cs", title: "Customer Success", href: "/cs" },
+  { id: "team", title: "Team Performance", href: "/team" },
+  { id: "initiatives", title: "Initiatives", href: "/initiatives" },
+  { id: "finserv", title: "FinServ", href: "/finserv" },
+  { id: "competitive", title: "Competitive", href: "/competitive" },
+  { id: "priorities", title: "Priorities", href: "/priorities" },
+  { id: "comms", title: "Comms", href: "/comms" },
 ];
 
-export default function Home() {
+async function loadCuratedSituations(): Promise<SituationCardData[]> {
+  const database = db();
+  const rows = await database
+    .select({
+      id: schema.situations.id,
+      title: schema.situations.title,
+      narrativeMd: schema.situations.narrativeMd,
+      recommendedAction: schema.situations.recommendedAction,
+      status: schema.situations.status,
+      severity: schema.situations.severity,
+      entityId: schema.situations.entityId,
+      signalIds: schema.situations.signalIds,
+      decisionFrame: schema.situations.decisionFrame,
+      updatedAt: schema.situations.updatedAt,
+    })
+    .from(schema.situations)
+    .where(
+      and(
+        or(
+          eq(schema.situations.status, "open"),
+          eq(schema.situations.status, "escalated"),
+          eq(schema.situations.status, "watching"),
+        ),
+        or(
+          isNull(schema.situations.snoozedUntil),
+          gte(schema.situations.snoozedUntil, new Date()),
+        ),
+        ne(schema.situations.status, "resolved"),
+      ),
+    )
+    .orderBy(
+      // Escalated first, then by severity, then by recency
+      sql`case when ${schema.situations.status} = 'escalated' then 0 else 1 end`,
+      sql`array_position(ARRAY['critical','high','medium','low']::text[], ${schema.situations.severity}::text)`,
+      desc(schema.situations.updatedAt),
+    )
+    .limit(7);
+
+  const entityIds = rows.map((r) => r.entityId).filter((id): id is string => !!id);
+  const entityMap = new Map<string, string>();
+  if (entityIds.length > 0) {
+    const entRows = await database
+      .select({ id: schema.entities.id, name: schema.entities.name })
+      .from(schema.entities)
+      .where(inArray(schema.entities.id, entityIds));
+    for (const e of entRows) entityMap.set(e.id, e.name);
+  }
+
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    severity: r.severity,
+    status: r.status,
+    narrativeMd: r.narrativeMd,
+    recommendedAction: r.recommendedAction,
+    signalCount: r.signalIds.length,
+    entityName: r.entityId ? entityMap.get(r.entityId) ?? null : null,
+    entityId: r.entityId,
+    hasDecisionFrame: r.decisionFrame !== null,
+    updatedAt: r.updatedAt.toISOString(),
+  }));
+}
+
+async function loadUpcomingMeetings() {
+  const database = db();
+  return database
+    .select()
+    .from(schema.calendarEvents)
+    .where(gte(schema.calendarEvents.startAt, new Date()))
+    .orderBy(asc(schema.calendarEvents.startAt))
+    .limit(5);
+}
+
+async function loadDueFollowUps() {
+  const database = db();
+  return database
+    .select()
+    .from(schema.followUps)
+    .where(
+      and(
+        isNull(schema.followUps.completedAt),
+        // due today or earlier
+      ),
+    )
+    .orderBy(asc(schema.followUps.dueAt))
+    .limit(10);
+}
+
+export default async function Home() {
+  let situations: SituationCardData[] = [];
+  let meetings: Awaited<ReturnType<typeof loadUpcomingMeetings>> = [];
+  let followUps: Awaited<ReturnType<typeof loadDueFollowUps>> = [];
+  let loadError: string | null = null;
+  try {
+    [situations, meetings, followUps] = await Promise.all([
+      loadCuratedSituations(),
+      loadUpcomingMeetings(),
+      loadDueFollowUps(),
+    ]);
+  } catch (err) {
+    loadError = err instanceof Error ? err.message : String(err);
+  }
+
+  const today = new Date().toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+
   return (
-    <main className="mx-auto max-w-4xl px-6 py-12">
-      <header className="mb-10">
-        <h1 className="text-4xl font-semibold tracking-tight">Chief of Staff</h1>
-        <p className="mt-2 text-slate-600">
-          Phase 0 scaffold. Ingestion endpoint live at <code className="font-mono">/api/ingest</code>.
-          Dashboards arrive as modules ship.
-        </p>
+    <main className="mx-auto max-w-3xl px-6 py-10">
+      <header className="mb-8 flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm uppercase tracking-wider text-slate-500">{today}</p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900">
+            Today
+          </h1>
+          <p className="mt-1 text-slate-600">
+            The {situations.length} thing{situations.length === 1 ? "" : "s"} I think matter most right now.
+          </p>
+        </div>
+        <SynthesizeButton />
       </header>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-xl font-medium">Ingest a payload</h2>
-        <p className="mt-2 text-sm text-slate-600">
-          Send canonical-envelope JSON to <code>/api/ingest</code> with a bearer token. Codex POSTs
-          directly; the Mac sync agent does the same after pulling from{" "}
-          <code>~/Desktop/chief of staff app/</code>.
-        </p>
-        <pre className="mt-4 overflow-x-auto rounded bg-slate-900 p-4 text-xs text-slate-100">
-{`curl -X POST $URL/api/ingest \\
-  -H "Authorization: Bearer $COS_INGEST_TOKEN" \\
-  -H "Content-Type: application/json" \\
-  -d @payload.json`}
-        </pre>
+      {loadError ? (
+        <div className="mb-6 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-900">
+          <strong>Could not load:</strong> {loadError}
+        </div>
+      ) : null}
+
+      {meetings.length > 0 ? (
+        <section className="mb-8">
+          <h2 className="mb-3 text-xs font-medium uppercase tracking-wider text-slate-500">
+            Up next
+          </h2>
+          <ul className="space-y-2">
+            {meetings.map((m) => (
+              <li
+                key={m.id}
+                className="rounded-md border border-slate-200 bg-white p-3 text-sm"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="font-medium text-slate-900">{m.title}</div>
+                  <div className="text-xs text-slate-500">
+                    {new Date(m.startAt).toLocaleString(undefined, {
+                      hour: "numeric",
+                      minute: "2-digit",
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </div>
+                </div>
+                {m.prepBriefingMd ? (
+                  <details className="mt-1">
+                    <summary className="cursor-pointer text-xs text-blue-600">
+                      Prep ready ↓
+                    </summary>
+                    <div className="mt-2 whitespace-pre-wrap text-xs text-slate-700">
+                      {m.prepBriefingMd}
+                    </div>
+                  </details>
+                ) : (
+                  <div className="mt-1 text-xs text-slate-400">Prep generates 30 min before start.</div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {followUps.length > 0 ? (
+        <section className="mb-8">
+          <h2 className="mb-3 text-xs font-medium uppercase tracking-wider text-slate-500">
+            Follow-ups due
+          </h2>
+          <ul className="space-y-1 text-sm">
+            {followUps.map((f) => (
+              <li
+                key={f.id}
+                className="flex items-center justify-between rounded border-l-2 border-amber-300 bg-amber-50 px-3 py-2"
+              >
+                <span>{f.title}</span>
+                <span className="text-xs text-amber-700">
+                  {new Date(f.dueAt).toLocaleDateString()}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <section className="mb-10">
+        <h2 className="mb-3 text-xs font-medium uppercase tracking-wider text-slate-500">
+          Open situations
+        </h2>
+        {situations.length === 0 ? (
+          <div className="rounded-md border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500">
+            <p>
+              No open situations yet. Once new signals arrive, synthesis will group them into
+              situations and surface here.
+            </p>
+            <p className="mt-2">
+              Use <strong>↻ Re-synthesize</strong> to run synthesis manually against current
+              signals.
+            </p>
+          </div>
+        ) : (
+          <ul className="space-y-3">
+            {situations.map((s) => (
+              <li key={s.id}>
+                <SituationCard situation={s} />
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
-      <section className="mt-8 flex flex-wrap gap-3">
+      <section className="mb-8 flex flex-wrap gap-2 text-xs">
         <Link
           href="/ask"
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          className="rounded-md bg-blue-600 px-3 py-1.5 font-medium text-white hover:bg-blue-700"
         >
-          Ask anything →
+          Ask Claude
         </Link>
         <Link
           href="/briefings"
-          className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:border-blue-400"
+          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 hover:border-blue-400"
         >
-          Briefings →
+          Briefings
         </Link>
         <Link
-          href="/notifications"
-          className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:border-blue-400"
+          href="/situations"
+          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 hover:border-blue-400"
         >
-          Notifications →
+          All situations
         </Link>
         <Link
           href="/accounts"
-          className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:border-blue-400"
+          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 hover:border-blue-400"
         >
-          Accounts →
+          Accounts
+        </Link>
+        <Link
+          href="/notifications"
+          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 hover:border-blue-400"
+        >
+          Notifications
         </Link>
         <Link
           href="/status"
-          className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:border-blue-400"
+          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 hover:border-blue-400"
         >
-          Status →
+          Status
         </Link>
       </section>
 
-      <section className="mt-8 grid gap-4 sm:grid-cols-2">
-        {MODULES.map((m) =>
-          m.live ? (
+      <details className="mb-8 text-xs text-slate-500">
+        <summary className="cursor-pointer hover:text-slate-700">
+          Module lenses (browse signals by source-type)
+        </summary>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {MODULES.map((m) => (
             <Link
               key={m.id}
               href={m.href}
-              className="rounded-lg border border-slate-200 bg-white p-4 transition hover:border-blue-400 hover:shadow-sm"
+              className="rounded border border-slate-200 bg-white px-2 py-1.5 text-center text-xs text-slate-700 hover:border-blue-400"
             >
-              <div className="text-sm font-medium uppercase tracking-wider text-blue-700">
-                {m.id}
-              </div>
-              <div className="mt-1 text-lg text-slate-900">{m.title}</div>
-              <div className="mt-2 text-xs text-blue-600">Live →</div>
+              {m.title}
             </Link>
-          ) : (
-            <div
-              key={m.id}
-              className="rounded-lg border border-dashed border-slate-300 bg-white p-4 text-slate-500"
-            >
-              <div className="text-sm font-medium uppercase tracking-wider">{m.id}</div>
-              <div className="mt-1 text-lg text-slate-800">{m.title}</div>
-              <div className="mt-2 text-xs text-slate-400">Module not yet implemented.</div>
-            </div>
-          ),
-        )}
-      </section>
+          ))}
+        </div>
+      </details>
     </main>
   );
 }

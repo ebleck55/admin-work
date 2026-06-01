@@ -145,6 +145,13 @@ export const processPayload = inngest.createFunction(
       }
     }
 
+    if (allPersisted.length > 0) {
+      await step.sendEvent("request-situations-synthesis", {
+        name: "situations/synthesize.requested",
+        data: { reason: `process-payload:${ledgerId}` },
+      });
+    }
+
     return {
       ledgerId,
       signalsDetected: allPersisted.length,

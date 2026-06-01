@@ -28,4 +28,7 @@ export type AppEvents = {
   "alerts/scan.requested": {
     data: { since?: string };
   };
+  "situations/synthesize.requested": {
+    data: { reason?: string };
+  };
 };

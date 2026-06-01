@@ -49,6 +49,14 @@ export const signalSeverityEnum = pgEnum("signal_severity", ["low", "medium", "h
 
 export const briefingStatusEnum = pgEnum("briefing_status", ["complete", "partial", "failed"]);
 
+export const situationStatusEnum = pgEnum("situation_status", [
+  "open",
+  "watching",
+  "escalated",
+  "resolved",
+  "snoozed",
+]);
+
 export const moduleIdEnum = pgEnum("module_id", [
   "pipeline",
   "cs",
@@ -326,5 +334,111 @@ export const llmUsage = pgTable(
   (t) => ({
     providerCreatedIdx: index("llm_usage_provider_created_idx").on(t.provider, t.createdAt),
     purposeIdx: index("llm_usage_purpose_idx").on(t.purpose),
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// situations — higher-order narrative unit wrapping 1-N signals (Phase 7)
+// ---------------------------------------------------------------------------
+export const situations = pgTable(
+  "situations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    title: text("title").notNull(),
+    narrativeMd: text("narrative_md").notNull(),
+    reasoningMd: text("reasoning_md").notNull(),
+    recommendedAction: text("recommended_action"),
+    status: situationStatusEnum("status").default("open").notNull(),
+    severity: signalSeverityEnum("severity").default("medium").notNull(),
+    entityId: uuid("entity_id").references(() => entities.id, { onDelete: "set null" }),
+    signalIds: jsonb("signal_ids").$type<string[]>().default([]).notNull(),
+    decisionFrame: jsonb("decision_frame").$type<{
+      question: string;
+      options: Array<{ label: string; tradeoff: string }>;
+      recommendation: string;
+      reasoning: string;
+    } | null>(),
+    sensitivity: sensitivityEnum("sensitivity").default("internal").notNull(),
+    shareable: boolean("shareable").default(true).notNull(),
+    snoozedUntil: timestamp("snoozed_until", { withTimezone: true }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    lastSynthesizedAt: timestamp("last_synthesized_at", { withTimezone: true }),
+  },
+  (t) => ({
+    statusSeverityIdx: index("situations_status_severity_idx").on(t.status, t.severity),
+    entityIdx: index("situations_entity_idx").on(t.entityId),
+    updatedAtIdx: index("situations_updated_at_idx").on(t.updatedAt),
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// situation_actions — audit log of action verbs taken on situations
+// ---------------------------------------------------------------------------
+export const situationActions = pgTable(
+  "situation_actions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    situationId: uuid("situation_id")
+      .references(() => situations.id, { onDelete: "cascade" })
+      .notNull(),
+    kind: text("kind").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    undoneAt: timestamp("undone_at", { withTimezone: true }),
+  },
+  (t) => ({
+    situationIdx: index("situation_actions_situation_idx").on(t.situationId),
+    kindIdx: index("situation_actions_kind_idx").on(t.kind),
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// calendar_events — Outlook calendar events with derived pre-meeting prep
+// ---------------------------------------------------------------------------
+export const calendarEvents = pgTable(
+  "calendar_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sourceId: text("source_id").notNull().unique(),
+    title: text("title").notNull(),
+    startAt: timestamp("start_at", { withTimezone: true }).notNull(),
+    endAt: timestamp("end_at", { withTimezone: true }).notNull(),
+    attendees: jsonb("attendees")
+      .$type<Array<{ email?: string; name?: string; is_self?: boolean }>>()
+      .default([])
+      .notNull(),
+    location: text("location"),
+    description: text("description"),
+    accountEntityIds: jsonb("account_entity_ids").$type<string[]>().default([]).notNull(),
+    prepBriefingMd: text("prep_briefing_md"),
+    prepSynthesizedAt: timestamp("prep_synthesized_at", { withTimezone: true }),
+    sensitivity: sensitivityEnum("sensitivity").default("internal").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    startAtIdx: index("calendar_events_start_at_idx").on(t.startAt),
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// follow_ups — items Eric flagged for action by date
+// ---------------------------------------------------------------------------
+export const followUps = pgTable(
+  "follow_ups",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sourceKind: text("source_kind").notNull(),
+    sourceId: uuid("source_id"),
+    title: text("title").notNull(),
+    dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    dueAtIdx: index("follow_ups_due_at_idx").on(t.dueAt),
+    completedIdx: index("follow_ups_completed_idx").on(t.completedAt),
   }),
 );
