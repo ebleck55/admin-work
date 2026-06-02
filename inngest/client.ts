@@ -34,4 +34,10 @@ export type AppEvents = {
   "calendar/meeting.prep.requested": {
     data: { calendarEventId: string };
   };
+  "entities/resolve.requested": {
+    data: { reason?: string };
+  };
+  "scoring/account.requested": {
+    data: { accountId?: string };
+  };
 };
