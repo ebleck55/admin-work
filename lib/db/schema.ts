@@ -518,3 +518,57 @@ export const memoryFacts = pgTable(
     ),
   }),
 );
+
+// ---------------------------------------------------------------------------
+// feedback — thumbs up/down + reason on signals + situations (Phase 10)
+// ---------------------------------------------------------------------------
+export const feedbackValenceEnum = pgEnum("feedback_valence", ["up", "down", "not_relevant"]);
+
+export const feedback = pgTable(
+  "feedback",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    targetKind: text("target_kind").notNull(),
+    targetId: uuid("target_id").notNull(),
+    valence: feedbackValenceEnum("valence").notNull(),
+    reasonCategory: text("reason_category"),
+    reasonText: text("reason_text"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    targetIdx: index("feedback_target_idx").on(t.targetKind, t.targetId),
+    valenceIdx: index("feedback_valence_idx").on(t.valence),
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// grader_prompt_versions — DB-stored grader system prompts so Phase 10's
+// feedback-driven tuning can swap the active prompt without a redeploy
+// ---------------------------------------------------------------------------
+export const graderPromptVersions = pgTable(
+  "grader_prompt_versions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    promptText: text("prompt_text").notNull(),
+    notes: text("notes"),
+    active: boolean("active").default(false).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    activeIdx: index("grader_prompt_versions_active_idx").on(t.active),
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// user_preferences — single-row solo-mode preferences (multi-user comes Phase 13)
+// ---------------------------------------------------------------------------
+export const userPreferences = pgTable("user_preferences", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  minimumDealAmount: real("minimum_deal_amount").default(0).notNull(),
+  preferredBriefingStyle: text("preferred_briefing_style").default("bottom-line-first").notNull(),
+  excludedAccountIds: jsonb("excluded_account_ids").$type<string[]>().default([]).notNull(),
+  focusModules: jsonb("focus_modules").$type<string[]>().default([]).notNull(),
+  notes: text("notes"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
+import { FeedbackRow } from "@/components/FeedbackRow";
+
 const SEVERITY_STYLE: Record<string, string> = {
   critical: "bg-red-50 border-red-300 text-red-900",
   high: "bg-orange-50 border-orange-300 text-orange-900",
@@ -129,6 +131,7 @@ export function SituationCard({ situation }: { situation: SituationCardData }) {
             minute: "2-digit",
           })}
         </span>
+        <FeedbackRow targetKind="situation" targetId={situation.id} />
         <span className="ml-auto flex gap-1">
           <button
             type="button"

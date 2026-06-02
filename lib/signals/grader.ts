@@ -118,13 +118,45 @@ const REPORT_SIGNALS_TOOL: Anthropic.Tool = {
   },
 };
 
-const SYSTEM_EXTRA = `
+const DEFAULT_SYSTEM_EXTRA = `
 GRADING RULES:
 - A claim becomes a signal ONLY if it would change what Eric does this week. "Pega is a competitor" is not a signal; "Customer cited Pega as the lead alternative they're evaluating" is.
 - Suppress noise: stage-change claims at expected positions, vanilla financial fields with no anomaly, regulatory-term name-drops with no actual concern, commitments that are restatements of prior commitments.
 - Group related claims into a single signal where appropriate.
 - Use the report_signals tool exactly once. Empty signals array is fine if nothing crosses the bar.
 `.trim();
+
+/**
+ * Active grader system-prompt text. Reads from grader_prompt_versions where
+ * active=true. Falls back to the DEFAULT_SYSTEM_EXTRA constant if none active.
+ * Cached for the lifetime of the process to avoid a DB round-trip per envelope.
+ */
+let cachedActivePrompt: string | null = null;
+let cachedActivePromptFetchedAt = 0;
+const PROMPT_CACHE_TTL_MS = 60 * 1000;
+
+async function getActiveSystemExtra(): Promise<string> {
+  if (
+    cachedActivePrompt !== null &&
+    Date.now() - cachedActivePromptFetchedAt < PROMPT_CACHE_TTL_MS
+  ) {
+    return cachedActivePrompt;
+  }
+  try {
+    const { db, schema } = await import("@/lib/db/client");
+    const { eq } = await import("drizzle-orm");
+    const rows = await db()
+      .select({ promptText: schema.graderPromptVersions.promptText })
+      .from(schema.graderPromptVersions)
+      .where(eq(schema.graderPromptVersions.active, true))
+      .limit(1);
+    cachedActivePrompt = rows[0]?.promptText ?? DEFAULT_SYSTEM_EXTRA;
+  } catch {
+    cachedActivePrompt = DEFAULT_SYSTEM_EXTRA;
+  }
+  cachedActivePromptFetchedAt = Date.now();
+  return cachedActivePrompt;
+}
 
 export interface GradeInput {
   envelope: PayloadEnvelope;
@@ -164,11 +196,12 @@ function buildUserPrompt(input: GradeInput): string {
 export async function gradeEnvelope(input: GradeInput): Promise<SignalCandidate[]> {
   if (input.claims.length === 0) return [];
 
+  const activeExtra = await getActiveSystemExtra();
   let result;
   try {
     result = await callClaude({
       modelKey: "sonnet46",
-      system: systemPromptFor({ mode: "extract", extra: `${SYSTEM_EXTRA}\n\n${varietySeed()}` }),
+      system: systemPromptFor({ mode: "extract", extra: `${activeExtra}\n\n${varietySeed()}` }),
       cacheSystem: true,
       prompt: buildUserPrompt(input),
       maxTokens: 4096,
