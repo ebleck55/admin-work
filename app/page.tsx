@@ -4,6 +4,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, ne, or, sql } from "drizzle-o
 import { db, schema } from "@/lib/db/client";
 import { SituationCard, type SituationCardData } from "@/components/SituationCard";
 import { SynthesizeButton } from "@/components/SynthesizeButton";
+import { FollowUpRow } from "@/components/FollowUpRow";
 
 export const dynamic = "force-dynamic";
 
@@ -195,15 +196,12 @@ export default async function Home() {
           </h2>
           <ul className="space-y-1 text-sm">
             {followUps.map((f) => (
-              <li
+              <FollowUpRow
                 key={f.id}
-                className="flex items-center justify-between rounded border-l-2 border-amber-300 bg-amber-50 px-3 py-2"
-              >
-                <span>{f.title}</span>
-                <span className="text-xs text-amber-700">
-                  {new Date(f.dueAt).toLocaleDateString()}
-                </span>
-              </li>
+                id={f.id}
+                title={f.title}
+                dueAt={f.dueAt.toISOString()}
+              />
             ))}
           </ul>
         </section>

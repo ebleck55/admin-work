@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { desc, eq, inArray } from "drizzle-orm";
 
 import { db, schema } from "@/lib/db/client";
+import { DecisionFrameClient } from "@/components/DecisionFrameClient";
+import { FollowUpQuickAdd } from "@/components/FollowUpQuickAdd";
 
 export const dynamic = "force-dynamic";
 
@@ -133,25 +135,30 @@ export default async function SituationDetailPage({
       ) : null}
 
       {decisionFrame ? (
-        <section className="mb-8 rounded-md border border-purple-200 bg-purple-50 p-4">
-          <h2 className="mb-2 text-sm font-medium uppercase tracking-wider text-purple-700">
-            Decision frame
-          </h2>
-          <p className="text-sm font-medium text-purple-900">{decisionFrame.question}</p>
-          <ul className="mt-3 space-y-2">
-            {decisionFrame.options.map((opt, i) => (
-              <li key={i} className="rounded bg-white/70 p-2 text-sm">
-                <div className="font-medium text-purple-900">{opt.label}</div>
-                <div className="text-purple-800">{opt.tradeoff}</div>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-3 text-sm text-purple-900">
-            <strong>Recommendation:</strong> {decisionFrame.recommendation}
-          </p>
-          <p className="mt-1 text-xs text-purple-700">{decisionFrame.reasoning}</p>
-        </section>
+        <DecisionFrameClient
+          situationId={situation.id}
+          frame={decisionFrame}
+          chosenLabel={
+            actions
+              .filter((a) => a.kind === "decision")
+              .sort(
+                (a, b) =>
+                  new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+              )[0]?.payload?.optionLabel as string | undefined
+          }
+        />
       ) : null}
+
+      <section className="mb-8">
+        <h2 className="mb-2 text-sm font-medium uppercase tracking-wider text-slate-500">
+          Add follow-up
+        </h2>
+        <FollowUpQuickAdd
+          sourceKind="situation"
+          sourceId={situation.id}
+          defaultTitle={situation.recommendedAction ?? ""}
+        />
+      </section>
 
       <section className="mb-8">
         <h2 className="mb-2 text-sm font-medium uppercase tracking-wider text-slate-500">
