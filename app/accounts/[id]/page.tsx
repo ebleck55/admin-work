@@ -97,7 +97,25 @@ async function loadAccountDetail(id: string) {
     .limit(20)
     .catch(() => [] as Array<{ id: string; name: string }>);
 
-  return { account, signals: signalRows, claims: claimRows, sourceCounts, opps: oppNames };
+  // Latest scores per kind
+  const scoreRows = await database
+    .select()
+    .from(schema.accountScores)
+    .where(eq(schema.accountScores.accountId, id))
+    .orderBy(desc(schema.accountScores.computedAt));
+  const latestScoreByKind = new Map<string, typeof scoreRows[number]>();
+  for (const s of scoreRows) {
+    if (!latestScoreByKind.has(s.kind)) latestScoreByKind.set(s.kind, s);
+  }
+
+  return {
+    account,
+    signals: signalRows,
+    claims: claimRows,
+    sourceCounts,
+    opps: oppNames,
+    scores: Array.from(latestScoreByKind.values()),
+  };
 }
 
 export default async function AccountDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -138,6 +156,41 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
           ))}
         </div>
       </div>
+
+      {data.scores.length > 0 ? (
+        <section className="mb-8 grid gap-3 sm:grid-cols-3">
+          {data.scores.map((s) => {
+            const color =
+              s.kind === "churn_likelihood"
+                ? s.score > 60
+                  ? "bg-red-50 text-red-900 border-red-300"
+                  : s.score > 30
+                    ? "bg-amber-50 text-amber-900 border-amber-300"
+                    : "bg-green-50 text-green-900 border-green-300"
+                : s.kind === "expansion_potential"
+                  ? s.score > 60
+                    ? "bg-green-50 text-green-900 border-green-300"
+                    : "bg-slate-50 text-slate-700 border-slate-200"
+                  : s.score > 60
+                    ? "bg-green-50 text-green-900 border-green-300"
+                    : s.score > 30
+                      ? "bg-amber-50 text-amber-900 border-amber-300"
+                      : "bg-red-50 text-red-900 border-red-300";
+            return (
+              <div key={s.id} className={`rounded-md border p-3 ${color}`}>
+                <div className="text-xs uppercase tracking-wider opacity-70">
+                  {s.kind.replace(/_/g, " ")}
+                </div>
+                <div className="mt-1 text-3xl font-semibold">{s.score}</div>
+                <details className="mt-1 text-xs">
+                  <summary className="cursor-pointer opacity-70">why</summary>
+                  <p className="mt-1 opacity-90">{s.reasoningMd}</p>
+                </details>
+              </div>
+            );
+          })}
+        </section>
+      ) : null}
 
       <section className="mb-10">
         <h2 className="mb-3 text-lg font-medium text-slate-900">Signals</h2>

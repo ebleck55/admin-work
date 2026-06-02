@@ -572,3 +572,30 @@ export const userPreferences = pgTable("user_preferences", {
   notes: text("notes"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+// ---------------------------------------------------------------------------
+// account_scores — LLM-scored health/churn/expansion likelihood per account
+// ---------------------------------------------------------------------------
+export const accountScoreKindEnum = pgEnum("account_score_kind", [
+  "churn_likelihood",
+  "expansion_potential",
+  "engagement_health",
+]);
+
+export const accountScores = pgTable(
+  "account_scores",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accountId: uuid("account_id")
+      .references(() => entities.id, { onDelete: "cascade" })
+      .notNull(),
+    kind: accountScoreKindEnum("kind").notNull(),
+    score: integer("score").notNull(),
+    reasoningMd: text("reasoning_md").notNull(),
+    computedAt: timestamp("computed_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    accountKindIdx: index("account_scores_account_kind_idx").on(t.accountId, t.kind),
+    computedAtIdx: index("account_scores_computed_at_idx").on(t.computedAt),
+  }),
+);
