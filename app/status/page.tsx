@@ -17,7 +17,10 @@ async function loadStatus() {
       (SELECT count(*) FROM ${schema.embeddings}) AS embedding_rows,
       (SELECT count(*) FROM ${schema.briefings}) AS briefing_rows
   `);
-  const counts0 = (counts as unknown as Array<Record<string, unknown>>)[0] ?? {};
+  const countsRows: Array<Record<string, unknown>> = Array.isArray(counts)
+    ? (counts as Array<Record<string, unknown>>)
+    : ((counts as { rows?: Array<Record<string, unknown>> }).rows ?? []);
+  const counts0 = countsRows[0] ?? {};
 
   const recentUsage = await database
     .select()

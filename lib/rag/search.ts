@@ -73,7 +73,13 @@ export async function searchEvidence(
     LIMIT ${limit}
   `);
 
-  return (rows as unknown as Array<Record<string, unknown>>).map((r) => ({
+  // db().execute() returns shape varies by driver/version:
+  //   - neon-http: returns the array directly OR { rows: [...] } depending on version
+  //   - drizzle-orm ≥ 0.36 wraps with { rows, rowCount }
+  const rowsArray: Array<Record<string, unknown>> = Array.isArray(rows)
+    ? (rows as Array<Record<string, unknown>>)
+    : ((rows as { rows?: Array<Record<string, unknown>> }).rows ?? []);
+  return rowsArray.map((r) => ({
     embeddingId: String(r.embedding_id),
     documentId: String(r.document_id),
     chunkText: String(r.chunk_text),

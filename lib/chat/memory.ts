@@ -114,7 +114,11 @@ export async function retrieveMemoryFacts(
     LIMIT ${limit}
   `);
 
-  const hits = (rows as unknown as Array<Record<string, unknown>>).map((r) => ({
+  // Defensive: db().execute() returns shape varies by Drizzle/Neon version
+  const rowsArray: Array<Record<string, unknown>> = Array.isArray(rows)
+    ? (rows as Array<Record<string, unknown>>)
+    : ((rows as { rows?: Array<Record<string, unknown>> }).rows ?? []);
+  const hits = rowsArray.map((r) => ({
     id: String(r.id),
     kind: r.kind as MemoryKind,
     text: String(r.text),
