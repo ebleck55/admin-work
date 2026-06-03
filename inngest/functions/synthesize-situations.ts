@@ -130,6 +130,15 @@ export const synthesizeSituations = inngest.createFunction(
       loadPreferenceContext("synthesis"),
     );
 
+    const { getInfluencingPreferenceFactIds } = await import(
+      "@/lib/prompts/preference-context"
+    );
+    const influencingFactIds = preferenceContext
+      ? await step.run("get-influencing-fact-ids", async () =>
+          getInfluencingPreferenceFactIds(),
+        )
+      : ([] as string[]);
+
     const synthesized = await step.run("call-synthesizer", async () =>
       synthesize({ ungroupedSignals, openSituations, preferenceContext }),
     );
@@ -159,6 +168,7 @@ export const synthesizeSituations = inngest.createFunction(
           entityId: ns.primary_entity_id ?? null,
           signalIds: ns.contributing_signal_ids,
           decisionFrame: ns.decision_frame ?? null,
+          influencingMemoryFactIds: influencingFactIds,
           sensitivity,
           shareable: sensitivity !== "private_dm",
           lastSynthesizedAt: new Date(),

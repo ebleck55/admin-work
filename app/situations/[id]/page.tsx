@@ -5,6 +5,7 @@ import { desc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import { DecisionFrameClient } from "@/components/DecisionFrameClient";
 import { FollowUpQuickAdd } from "@/components/FollowUpQuickAdd";
+import { PreferenceProvenanceList } from "@/components/PreferenceProvenanceList";
 
 export const dynamic = "force-dynamic";
 
@@ -124,6 +125,20 @@ export default async function SituationDetailPage({
           {situation.reasoningMd}
         </div>
       </section>
+
+      {situation.influencingMemoryFactIds &&
+      (situation.influencingMemoryFactIds as string[]).length > 0 ? (
+        <section className="mb-8 rounded-md border border-purple-200 bg-purple-50/60 p-3 text-xs">
+          <details>
+            <summary className="cursor-pointer text-purple-700">
+              Influenced by your preferences ({(situation.influencingMemoryFactIds as string[]).length})
+            </summary>
+            <PreferenceProvenanceList
+              ids={situation.influencingMemoryFactIds as string[]}
+            />
+          </details>
+        </section>
+      ) : null}
 
       {situation.recommendedAction ? (
         <section className="mb-8 rounded-md border border-blue-200 bg-blue-50 p-4">

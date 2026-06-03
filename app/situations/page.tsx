@@ -3,6 +3,7 @@ import { and, desc, eq, gte, inArray, isNull, ne, or, sql } from "drizzle-orm";
 
 import { db, schema } from "@/lib/db/client";
 import { SituationCard, type SituationCardData } from "@/components/SituationCard";
+import { MergeSituationsControl } from "@/components/MergeSituationsControl";
 
 export const dynamic = "force-dynamic";
 
@@ -110,6 +111,14 @@ export default async function SituationsPage({
           set — this page is the full browseable list.
         </p>
       </div>
+
+      {situations.length > 1 ? (
+        <div className="mb-4">
+          <MergeSituationsControl
+            candidates={situations.map((s) => ({ id: s.id, title: s.title }))}
+          />
+        </div>
+      ) : null}
 
       <div className="mb-4 flex flex-wrap gap-2 text-xs">
         {[

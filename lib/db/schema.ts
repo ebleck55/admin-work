@@ -364,6 +364,10 @@ export const situations = pgTable(
       recommendation: string;
       reasoning: string;
     } | null>(),
+    influencingMemoryFactIds: jsonb("influencing_memory_fact_ids")
+      .$type<string[]>()
+      .default([])
+      .notNull(),
     sensitivity: sensitivityEnum("sensitivity").default("internal").notNull(),
     shareable: boolean("shareable").default(true).notNull(),
     snoozedUntil: timestamp("snoozed_until", { withTimezone: true }),
@@ -511,6 +515,7 @@ export const memoryFacts = pgTable(
     sourceMessageId: uuid("source_message_id").references(() => messages.id, {
       onDelete: "set null",
     }),
+    sourceFeedbackId: uuid("source_feedback_id"),
     sensitivity: sensitivityEnum("sensitivity").default("internal").notNull(),
     weight: real("weight").default(1.0).notNull(),
     lastReferencedAt: timestamp("last_referenced_at", { withTimezone: true }),

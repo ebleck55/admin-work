@@ -11,6 +11,7 @@ import {
   resolveEntities,
   scoreAccountsWeekly,
   researchAccountFn,
+  inferPreferenceFromFeedback,
 } from "@/inngest/functions";
 
 export const runtime = "nodejs";
@@ -28,5 +29,6 @@ export const { GET, POST, PUT } = serve({
     resolveEntities,
     scoreAccountsWeekly,
     researchAccountFn,
+    inferPreferenceFromFeedback,
   ],
 });
