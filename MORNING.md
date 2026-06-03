@@ -1,112 +1,113 @@
 # Good morning — here's what changed and what you need to do
 
-Everything below is on the branch `claude/chief-of-staff-review-PxLA8` in a **draft PR**.
-Nothing is live yet. You merge when you're happy. Reviewed bottom-up: do the **Your steps**
-section first (≈15 min), then merge.
+Everything below is on branch `claude/chief-of-staff-review-PxLA8` in a **draft PR**. Nothing
+is live until you merge. Do the **Your steps** section first (≈5 min), then merge.
+
+> Update: the front door is now a **built-in login page** (no Vercel Pro needed). The earlier
+> Vercel Password Protection plan was dropped.
 
 ---
 
 ## The one thing that matters most
-Your app was reachable on the public internet with **no login** on the chat, memory, and most
-other routes — anyone with the URL could read (and poison) real customer data, including
-private DMs. The fix for that is a setting **you** turn on in Vercel (Password Protection).
-The code changes here make everything else robust *around* that gate and make sure turning it
-on doesn't break your data pipeline.
+Your app was reachable on the public internet with **no login** on chat, memory, and most
+routes — anyone with the URL could read (and poison) real customer data, including private DMs.
+This PR adds a real login gate **in the app itself**: a `/login` page + a signed session cookie
+enforced on every route by middleware. Your data-pipeline endpoints (`/api/ingest`,
+`/api/inngest`, `/api/cron`, `/api/health`) are exempt because they already authenticate with
+their own secrets — so turning this on does **not** break ingestion.
 
 ---
 
 ## Your steps (do these in order)
 
-### 1. Lock the front door (5 min) — the critical one
-1. Vercel → your project → **Settings → Deployment Protection**.
-2. Turn on **Password Protection** (Pro plan) for Production. Set a password only you know.
-3. Still on that page, under **Protection Bypass for Automation**, click **Generate Secret**
-   and copy it.
+### 1. Add two env vars in Vercel (3 min) — the critical one
+Vercel → your project → **Settings → Environment Variables** (Production):
 
-### 2. Add three env vars in Vercel (5 min)
-Vercel → Settings → Environment Variables (Production):
 | Variable | Value |
 |---|---|
-| `VERCEL_AUTOMATION_BYPASS_SECRET` | the bypass secret you just generated |
-| `COS_DAILY_USD_CAP` | `50` (or whatever daily LLM ceiling you want) |
+| `COS_APP_PASSWORD` | the password you'll type to sign in — make it long |
+| `COS_SESSION_SECRET` | run `openssl rand -base64 32` and paste the output |
 
-### 3. Keep your data pipeline alive past the gate (5 min)
-Password Protection blocks *everything*, including the machines that feed the app. Handle each:
-- **Sync agent** (the Mac script): set `VERCEL_AUTOMATION_BYPASS_SECRET` in its environment to
-  the same secret. It now sends that header automatically — no other change.
-- **Codex ingest connectors** (Outlook/Slack/Zoom → `/api/ingest`): add the request header
-  `x-vercel-protection-bypass: <secret>` to their POST config.
-- **Inngest**: in the Inngest dashboard, set your app's serve URL to include the bypass query
-  params: `https://<your-domain>/api/inngest?x-vercel-protection-bypass=<secret>&x-vercel-set-bypass-cookie=true`,
-  then re-sync. (If Inngest functions stop running after you enable the gate, this is why.)
-- **Vercel Cron**: nothing to do — Vercel Cron bypasses Deployment Protection automatically.
+Optional (cost guard): `COS_DAILY_USD_CAP` = `50` (or your preferred daily LLM ceiling).
 
-### 4. Merge the PR
-Review the draft PR, then merge to deploy. CI (typecheck + tests + build) is green.
+> If `COS_SESSION_SECRET` is missing in production, the app **fails closed** (503 on every
+> page) rather than serving data unauthenticated — so don't skip this.
 
-### 5. Smoke-test live (10 min, after deploy)
-Run these against the deployed app (all should still work *because* of step 3):
-```bash
-# Ingest still works through the gate (expects 200 + a ledger id):
-curl -X POST https://<domain>/api/ingest \
-  -H "Authorization: Bearer $COS_INGEST_TOKEN" \
-  -H "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET" \
-  -H "Content-Type: application/json" -d @sample-envelope.json
+### 2. Merge the PR
+Review draft PR #2, then merge to deploy. (Confirm the GitHub Actions `build` check is green
+first — see the note at the bottom.)
 
-# The UI now asks for the Vercel password before loading any page.
-# In the browser, after logging in: open a chat, ask a question — you should get a grounded
-# answer; ask something with no evidence — it should say "no evidence on file" (not make
-# something up).
-```
-Then: trigger a briefing (or wait for the noon cron) and confirm that if it contains an
-unverified figure, you see an **"⚠️ Unverified claims"** footer at the bottom.
+### 3. Smoke-test live (5 min, after deploy)
+- Visit the app → you should be redirected to **`/login`**. Enter `COS_APP_PASSWORD` → you land
+  on the dashboard. A wrong password is rejected (and throttled after ~10 tries/min).
+- Confirm ingestion still works (it's exempt from the gate):
+  ```bash
+  curl -X POST https://<domain>/api/ingest \
+    -H "Authorization: Bearer $COS_INGEST_TOKEN" \
+    -H "Content-Type: application/json" -d @sample-envelope.json
+  ```
+  Expect `200` + a ledger id. If Inngest functions stop running, check the Inngest dashboard is
+  still pointed at `/api/inngest` (no change needed — it's exempt).
+- In a chat: ask a question → grounded answer. Ask something with no evidence → it should say
+  **"no evidence on file"** (not invent an answer).
+- Trigger a briefing (or wait for the noon cron); if it contains an unsupported figure you'll
+  see an **"⚠️ Unverified claims"** footer.
+
+There is no separate "log out" button in the UI yet, but `POST /api/auth/logout` clears the
+session if you ever need it.
 
 ---
 
 ## What changed in the code (plain English)
 
+**Front door (new)**
+- Built-in **login gate**: `/login` page + signed HttpOnly session cookie, enforced on every
+  page and API route by `middleware.ts`. Machine endpoints stay reachable via their own secrets.
+  Login attempts are rate-limited.
+
 **Security & data isolation**
-- **Injection defense:** all third-party content (emails, Slack, Zoom, CRM) is now wrapped as
-  clearly-labeled *untrusted data* before it reaches the model, with rules telling the model
-  never to obey instructions hidden inside it. A crafted email can no longer tell your
-  assistant to "set the deal to $5M."
-- **Private-DM leak guard:** the safety check that was written but never actually wired in is
-  now enforced — briefings drop any private-DM content before they're generated, fail-closed.
-- **No-fabrication-on-empty:** if a question has no supporting evidence, the assistant now says
-  so instead of answering from general knowledge.
+- **Injection defense:** all third-party content (email, Slack, Zoom, CRM) is wrapped as
+  labeled *untrusted data* with rules telling the model never to obey instructions hidden in it.
+- **Private-DM leak guard:** the safety check that was written but never wired in is now
+  enforced — briefings drop private-DM content before generation, fail-closed.
+- **No-fabrication-on-empty:** with no supporting evidence, the assistant says so instead of
+  guessing from general knowledge.
 - **Audit trail:** every time private-DM content is surfaced, it's logged.
 
 **Trustworthy output**
-- **Fact-verification pass:** briefings are now checked, claim by claim, against their source
-  evidence; any number/quote/date that isn't supported gets flagged in an "Unverified claims"
-  footer so you confirm before forwarding.
+- **Fact-verification pass:** briefings are checked claim-by-claim against their evidence; any
+  unsupported number/quote/date is flagged in an "Unverified claims" footer.
 
 **Reliability & cost**
-- **Real spend cap:** every LLM call is now recorded to the database and a rolling 24-hour
-  budget is enforced (`COS_DAILY_USD_CAP`). Background jobs pause at the cap; interactive chat
-  keeps working but alerts at 50/80/100%. (Previously cost tracking reset on every cold start
-  and capped nothing.)
+- **Real spend cap:** every LLM call is recorded to the DB and a rolling 24h budget is enforced
+  (`COS_DAILY_USD_CAP`), with 50/80/100% alerts. (Previously cost tracking reset on every cold
+  start and capped nothing.)
 - Internal error messages are no longer leaked to the browser in the chat stream.
 
 **New capability — "Movers"**
-- A new **/movers** page (linked from the home nav) ranks accounts whose health scores moved
-  the *wrong way* week-over-week, with a one-line "so-what" and a "Draft the play" button.
-  It surfaces *change*, not just bad absolute scores.
+- A new **/movers** page (linked from home) ranks accounts whose health scores moved the *wrong*
+  way week-over-week, with a one-line "so-what" and a "draft the play" button.
 
 ---
 
 ## Honest caveats (please read)
-- I built and verified all of this with **type-checks, the test suite (57 tests, all passing),
-  a production build, and lint** — but this environment had **no database or API keys**, so I
-  could **not** run it against your live data. Step 5's smoke tests are how we confirm the real
-  behavior. Watch the first briefing and the first ingest after you flip the gate.
-- **Durable rate-limiting / circuit-breaking across serverless instances** is *not* in this PR.
-  The honest reason: doing it right needs a shared store (Vercel KV / Upstash) that I can't
-  provision or test from here, and a half-built version risks breaking all requests. The
-  **daily budget cap is the real cost guardrail** and it *is* in. If you want distributed rate
-  limiting, that's a small follow-up once you add a KV store — say the word.
-- **Provenance click-through** (every citation linking to its source) is partially there — the
-  data is already exposed to the UI — but I did not rebuild the chat components to render it as
-  links, since I couldn't test UI changes live. Flagged as a follow-up.
+- Verified with **type-checks, the test suite (63 tests, all passing), a production build, and
+  lint** — but this environment had **no database or API keys**, so it was **not** run against
+  your live data. Step 3 is how we confirm real behavior.
+- The session cookie is `SameSite=Lax` + `HttpOnly` + `Secure` (in prod). Good for a single-user
+  app. If you later add more users or want SSO, that's a bigger change (Auth.js) — not needed now.
+- **Distributed rate-limiting / circuit-breaking** across serverless instances is *not* in this
+  PR (needs a shared store like Vercel KV; a half-built version risks breaking all requests). The
+  **daily budget cap is the real cost guardrail** and it *is* in. The login throttle is
+  best-effort per-instance.
+- **Provenance click-through** (citations linking to source) is partial — the data is exposed to
+  the UI but the chat components weren't rebuilt to render links, since UI changes couldn't be
+  tested live.
 
-Full technical plan: `/root/.claude/plans/woolly-giggling-puffin.md` (in the planning env).
+---
+
+### Note on CI
+The GitHub Actions `build` check (typecheck + tests + build) runs on the PR. Confirm it's green
+before merging — I'll have flagged here if it came back red.
+
+Full technical plan: `/root/.claude/plans/woolly-giggling-puffin.md` (planning env).

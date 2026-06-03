@@ -15,9 +15,12 @@ const EnvSchema = z.object({
   // Hard daily LLM spend cap (USD). Optional; the budget guard defaults to 50 if unset.
   COS_DAILY_USD_CAP: z.coerce.number().positive().optional(),
 
-  // Vercel "Protection Bypass for Automation" secret — lets machine callers (Codex ingest
-  // connectors, Inngest) reach the deployment after Vercel Password Protection is enabled.
-  VERCEL_AUTOMATION_BYPASS_SECRET: z.string().min(1).optional(),
+  // App login gate (single user). COS_APP_PASSWORD is the shared password; COS_SESSION_SECRET
+  // signs the session cookie. Both required in production for the gate to function; optional in
+  // the schema so local dev / CI builds without them don't throw (middleware fails closed in
+  // production when COS_SESSION_SECRET is missing).
+  COS_APP_PASSWORD: z.string().min(1).optional(),
+  COS_SESSION_SECRET: z.string().min(16).optional(),
 
   BLOB_READ_WRITE_TOKEN: z.string().min(1).optional(),
 
