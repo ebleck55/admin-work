@@ -45,7 +45,11 @@ export async function searchEvidence(
   const includePrivateDm = opts.includePrivateDm ?? false;
 
   const [vector] = await embed([query]);
+  // Bind the vector as a parameter and cast to ::vector, rather than interpolating it into
+  // the SQL string. The embedding is model-generated floats today, but parameterizing avoids
+  // the string-injection footgun entirely.
   const vectorLiteral = `[${vector.join(",")}]`;
+  const vectorParam = sql`${vectorLiteral}::vector`;
 
   // Sensitivity filter values
   const allowedSensitivities = includePrivateDm
@@ -59,7 +63,7 @@ export async function searchEvidence(
       e.chunk_text  AS chunk_text,
       e.chunk_index AS chunk_index,
       e.sensitivity AS sensitivity,
-      e.embedding <=> ${sql.raw(`'${vectorLiteral}'::vector`)} AS distance,
+      e.embedding <=> ${vectorParam} AS distance,
       d.title       AS document_title,
       d.ledger_id   AS document_ledger_id
     FROM ${schema.embeddings} e
@@ -68,7 +72,7 @@ export async function searchEvidence(
       allowedSensitivities.map((s) => sql`${s}`),
       sql`, `,
     )})
-    AND e.embedding <=> ${sql.raw(`'${vectorLiteral}'::vector`)} < ${maxDistance}
+    AND e.embedding <=> ${vectorParam} < ${maxDistance}
     ORDER BY distance ASC
     LIMIT ${limit}
   `);

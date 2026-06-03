@@ -6,6 +6,7 @@
  */
 
 import { GROUNDING_CLAUSES, SENSITIVITY_CLAUSES } from "@/lib/llm/safety";
+import { INJECTION_DEFENSE_CLAUSES } from "@/lib/prompts/evidence-block";
 import { bannedPhrasesBlock, voiceFor, type VoiceMode } from "@/lib/prompts/voice";
 
 const COS_IDENTITY = `You are Chief of Staff, an analyst-assistant for Eric Bouchard, SVP of Financial Services GTM at UiPath. Your job is to surface deal risks, expansion plays, coaching moments, regulatory signals, competitive themes, and exec-comms drafts — every claim grounded in the evidence ledger.`;
@@ -53,8 +54,19 @@ export interface SystemPromptOptions {
   voice?: VoiceMode;
 }
 
+/** Modes whose prompts include third-party evidence and therefore need injection defense. */
+const EVIDENCE_CONSUMING_MODES: ReadonlySet<SystemPromptMode> = new Set([
+  "answer",
+  "brief",
+  "extract",
+  "verify",
+]);
+
 export function systemPromptFor(opts: SystemPromptOptions): string {
   const voiceBlock = opts.voice ? voiceFor(opts.voice) : "";
+  const injectionBlock = EVIDENCE_CONSUMING_MODES.has(opts.mode)
+    ? INJECTION_DEFENSE_CLAUSES
+    : "";
   return [
     COS_IDENTITY,
     COS_CAPABILITIES,
@@ -63,6 +75,7 @@ export function systemPromptFor(opts: SystemPromptOptions): string {
     voiceBlock,
     GROUNDING_CLAUSES,
     SENSITIVITY_CLAUSES,
+    injectionBlock,
     opts.extra ?? "",
   ]
     .filter(Boolean)

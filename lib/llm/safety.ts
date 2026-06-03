@@ -106,3 +106,25 @@ export function checkOutputEligibility(ctx: OutputContext): OutputCheck {
   }
   return { allowed: true };
 }
+
+/**
+ * Fail-closed enforcement of the Tier-3 gate at the row level. Given a list of
+ * sensitivity-tagged items destined for a shareable artifact, removes any `private_dm` item
+ * and returns the kept + dropped partitions so the caller can log the drop. When the artifact
+ * is not shareable, everything is kept. This is the runtime counterpart to
+ * `checkOutputEligibility` — call it on the evidence/signals/situations that feed any
+ * artifact that could be shared with another person.
+ */
+export function dropIneligible<T extends { sensitivity?: Sensitivity | null }>(
+  items: T[],
+  ctx: { shareable: boolean },
+): { kept: T[]; dropped: T[] } {
+  if (!ctx.shareable) return { kept: items, dropped: [] };
+  const kept: T[] = [];
+  const dropped: T[] = [];
+  for (const item of items) {
+    if (item.sensitivity === "private_dm") dropped.push(item);
+    else kept.push(item);
+  }
+  return { kept, dropped };
+}
