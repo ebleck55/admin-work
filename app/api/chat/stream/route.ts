@@ -67,6 +67,14 @@ export async function POST(req: NextRequest) {
           includePrivateDm: body.personal === true,
         });
 
+        // Audit: record whenever private-DM evidence is surfaced (personal feed only).
+        const privateHits = hits.filter((h) => h.sensitivity === "private_dm").length;
+        if (privateHits > 0) {
+          console.warn(
+            `[audit] ask: surfaced ${privateHits} private_dm chunk(s) (personal=${body.personal === true})`,
+          );
+        }
+
         controller.enqueue(
           encoder.encode(
             sseEvent("retrieval", {

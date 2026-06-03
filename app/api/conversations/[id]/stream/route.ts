@@ -99,6 +99,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
           retrieveMemoryFacts(body.message, { limit: 6, includePrivateDm: body.personal === true }),
         ]);
 
+        // Audit: record whenever private-DM evidence is surfaced (personal feed only).
+        const privateHits = evidenceHits.filter((h) => h.sensitivity === "private_dm").length;
+        if (privateHits > 0) {
+          console.warn(
+            `[audit] conversation ${conversationId}: surfaced ${privateHits} private_dm chunk(s) (personal=${body.personal === true})`,
+          );
+        }
+
         controller.enqueue(
           encoder.encode(
             sseEvent("retrieval", {

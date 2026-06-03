@@ -22,16 +22,20 @@ interface RedactionRule {
   replacement: string;
 }
 
+// NOTE: regex redaction is best-effort defense-in-depth only. It cannot catch names,
+// addresses, account numbers, or most MNPI. The real PII control is the access gate in front
+// of the deployment (Vercel Password Protection) + restricted DB access — see SETUP.md.
 const REDACTION_RULES: RedactionRule[] = [
   {
     name: "us_ssn",
-    pattern: /\b\d{3}-\d{2}-\d{4}\b/g,
+    // Allow dashed, spaced, or run-together SSNs (123-45-6789 / 123 45 6789 / 123456789).
+    pattern: /\b\d{3}[- ]?\d{2}[- ]?\d{4}\b/g,
     replacement: "[REDACTED:SSN]",
   },
   {
-    // Generic 13-19 digit run with optional dashes/spaces — credit-card-ish.
+    // 13-19 digit run with optional single separators between groups — credit-card-ish.
     name: "credit_card",
-    pattern: /\b(?:\d[ -]*?){13,19}\b/g,
+    pattern: /\b(?:\d[ -]?){13,19}\b/g,
     replacement: "[REDACTED:CARD]",
   },
   {
