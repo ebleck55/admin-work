@@ -259,6 +259,12 @@ export default async function Home() {
           At Risk →
         </Link>
         <Link
+          href="/movers"
+          className="rounded-md border border-red-300 bg-red-50 px-3 py-1.5 font-medium text-red-800 hover:bg-red-100"
+        >
+          Movers →
+        </Link>
+        <Link
           href="/accounts"
           className="rounded-md border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 hover:border-blue-400"
         >

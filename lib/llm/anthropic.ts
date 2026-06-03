@@ -23,6 +23,7 @@ import { env } from "@/lib/env";
 import { MODELS, type ModelKey } from "@/lib/llm/router";
 import { isCircuitOpen, recordResult } from "@/lib/llm/circuit-breaker";
 import { recordGlobalUsage, type CostTracker } from "@/lib/llm/cost-tracker";
+import { assertWithinBudget, persistUsage } from "@/lib/llm/budget";
 
 let cachedClient: Anthropic | null = null;
 function client(): Anthropic {
@@ -52,6 +53,12 @@ export interface ClaudeCallOptions {
   costTracker?: CostTracker;
   /** Identifier for audit logging. */
   purpose?: string;
+  /**
+   * Interactive/user-facing call that should not be hard-blocked by the daily budget cap.
+   * Background jobs (briefings, synthesis, research) should leave this false so they pause
+   * first when spend approaches the cap.
+   */
+  essential?: boolean;
   /** Abort signal for upstream cancellation. */
   signal?: AbortSignal;
 }
@@ -84,6 +91,8 @@ export async function callClaude(opts: ClaudeCallOptions): Promise<ClaudeCallRes
   if (isCircuitOpen(key)) {
     throw new Error(`Anthropic circuit breaker open for ${key}; refusing call.`);
   }
+  // Hard daily spend guard (durable, reads llm_usage). Throws BudgetExceededError if over cap.
+  await assertWithinBudget({ essential: opts.essential, purpose: opts.purpose });
 
   const messages: MessageParam[] =
     opts.messages ?? (opts.prompt ? [{ role: "user", content: opts.prompt }] : []);
@@ -135,6 +144,13 @@ export async function callClaude(opts: ClaudeCallOptions): Promise<ClaudeCallRes
     const usageRecord = { modelKey: key, ...usage };
     if (opts.costTracker) opts.costTracker.record(usageRecord);
     else recordGlobalUsage(usageRecord);
+    persistUsage({
+      modelKey: key,
+      usage: usageRecord,
+      purpose: opts.purpose,
+      durationMs,
+      success: true,
+    });
 
     return {
       text,
@@ -146,6 +162,14 @@ export async function callClaude(opts: ClaudeCallOptions): Promise<ClaudeCallRes
     };
   } catch (err) {
     recordResult(key, { success: false, durationMs: Date.now() - start });
+    persistUsage({
+      modelKey: key,
+      usage: { modelKey: key, inputTokens: 0, outputTokens: 0 },
+      purpose: opts.purpose,
+      durationMs: Date.now() - start,
+      success: false,
+      errorMessage: err instanceof Error ? err.message : String(err),
+    });
     throw err;
   }
 }

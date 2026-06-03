@@ -15,6 +15,8 @@ import { db, schema } from "@/lib/db/client";
 import { inngest } from "@/inngest/client";
 import { callClaude } from "@/lib/llm/anthropic";
 import { systemPromptFor } from "@/lib/prompts/system";
+import { dropIneligible } from "@/lib/llm/safety";
+import { verifyFacts, unverifiedFooterMd } from "@/lib/llm/verify";
 import { varietySeed } from "@/lib/prompts/variety";
 import {
   getInfluencingPreferenceFactIds,
@@ -117,12 +119,27 @@ export const generateBriefing = inngest.createFunction(
       ? await getInfluencingPreferenceFactIds()
       : [];
 
+    // Tier-3 fail-closed gate: a briefing is a shareable artifact, so drop any situation or
+    // signal whose sensitivity is private_dm even if its `shareable` column was set true.
+    const { kept: eligibleSituations, dropped: droppedSituations } = dropIneligible(
+      situationRows,
+      { shareable: true },
+    );
+    const { kept: eligibleSignals, dropped: droppedSignals } = dropIneligible(signalRows, {
+      shareable: true,
+    });
+    if (droppedSituations.length > 0 || droppedSignals.length > 0) {
+      console.warn(
+        `[generate-briefing] dropped ${droppedSituations.length} situation(s) + ${droppedSignals.length} signal(s) with private_dm sensitivity from shareable briefing ${briefingId}`,
+      );
+    }
+
     let briefingMd = "_No active situations or signals — the ledger had no qualifying activity._";
     let errorMessage: string | null = null;
 
-    if (situationRows.length > 0 || signalRows.length > 0) {
-      const situationsBlock = situationRows.length
-        ? situationRows
+    if (eligibleSituations.length > 0 || eligibleSignals.length > 0) {
+      const situationsBlock = eligibleSituations.length
+        ? eligibleSituations
             .map(
               (s, i) =>
                 `[situation #${i + 1} — ${s.severity} — ${s.status}]\nTitle: ${s.title}\nNarrative: ${s.narrativeMd}\nWhy it matters: ${s.reasoningMd}${s.recommendedAction ? `\nRecommended action: ${s.recommendedAction}` : ""}`,
@@ -130,8 +147,8 @@ export const generateBriefing = inngest.createFunction(
             .join("\n\n")
         : "(no active situations yet)";
 
-      const signalsBlock = signalRows.length
-        ? signalRows
+      const signalsBlock = eligibleSignals.length
+        ? eligibleSignals
             .map(
               (s, i) =>
                 `[signal #${i + 1} — ${s.kind} — ${s.severity}] ${s.title} — ${s.summary}`,
@@ -167,6 +184,19 @@ Compose a briefing in 4-6 short sections. Each section should advance one thread
           }),
         );
         briefingMd = opusResult.text;
+
+        // Fact-verification pass: flag any figure/quote/date in the briefing that isn't
+        // supported by the situations/signals it was built from. Unverified spans are
+        // appended as a visible footer so Eric confirms them before sharing.
+        const verify = await step.run("verify-facts", async () =>
+          verifyFacts({
+            generated: briefingMd,
+            evidence: `${situationsBlock}\n\n${signalsBlock}`,
+          }),
+        );
+        if (!verify.verified) {
+          briefingMd += unverifiedFooterMd(verify.unverified);
+        }
       } catch (err) {
         errorMessage = err instanceof Error ? err.message : String(err);
         console.error("[generate-briefing] opus call failed:", errorMessage);
@@ -180,8 +210,8 @@ Compose a briefing in 4-6 short sections. Each section should advance one thread
         .set({
           contentMd: briefingMd,
           status: errorMessage ? "failed" : "complete",
-          signalIds: signalRows.map((s) => s.id),
-          situationIds: situationRows.map((s) => s.id),
+          signalIds: eligibleSignals.map((s) => s.id),
+          situationIds: eligibleSituations.map((s) => s.id),
           influencingMemoryFactIds: influencingFactIds,
           generatedAt: new Date(),
           failedReason: errorMessage,
@@ -193,7 +223,7 @@ Compose a briefing in 4-6 short sections. Each section should advance one thread
       await db().insert(schema.briefingRuns).values({
         forDate,
         signalCountToday: todayCount,
-        situationCountActive: situationRows.length,
+        situationCountActive: eligibleSituations.length,
         outputChars: briefingMd.length,
         durationMs: Date.now() - startedAt,
         briefingId,
@@ -211,8 +241,8 @@ Compose a briefing in 4-6 short sections. Each section should advance one thread
 
     return {
       briefingId,
-      situationCount: situationRows.length,
-      signalCount: signalRows.length,
+      situationCount: eligibleSituations.length,
+      signalCount: eligibleSignals.length,
       outputChars: briefingMd.length,
     };
   },

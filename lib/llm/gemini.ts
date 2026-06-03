@@ -11,6 +11,7 @@ import { env } from "@/lib/env";
 import { MODELS, type ModelKey } from "@/lib/llm/router";
 import { recordResult } from "@/lib/llm/circuit-breaker";
 import { recordGlobalUsage, type CostTracker } from "@/lib/llm/cost-tracker";
+import { assertWithinBudget, persistUsage } from "@/lib/llm/budget";
 
 let cachedClient: GoogleGenerativeAI | null = null;
 function client(): GoogleGenerativeAI {
@@ -29,6 +30,8 @@ export interface GeminiCallOptions {
   temperature?: number;
   costTracker?: CostTracker;
   purpose?: string;
+  /** Interactive call exempt from the hard budget block (see callClaude). */
+  essential?: boolean;
   signal?: AbortSignal;
 }
 
@@ -50,6 +53,8 @@ export async function callGemini(opts: GeminiCallOptions): Promise<GeminiCallRes
     },
   });
 
+  await assertWithinBudget({ essential: opts.essential, purpose: opts.purpose });
+
   const start = Date.now();
   try {
     const result = await model.generateContent({
@@ -60,13 +65,23 @@ export async function callGemini(opts: GeminiCallOptions): Promise<GeminiCallRes
       inputTokens: result.response.usageMetadata?.promptTokenCount ?? 0,
       outputTokens: result.response.usageMetadata?.candidatesTokenCount ?? 0,
     };
-    recordResult(modelKey, { success: true, durationMs: Date.now() - start });
+    const durationMs = Date.now() - start;
+    recordResult(modelKey, { success: true, durationMs });
     const usageRecord = { modelKey, ...usage };
     if (opts.costTracker) opts.costTracker.record(usageRecord);
     else recordGlobalUsage(usageRecord);
+    persistUsage({ modelKey, usage: usageRecord, purpose: opts.purpose, durationMs, success: true });
     return { text, modelKey, usage };
   } catch (err) {
     recordResult(modelKey, { success: false, durationMs: Date.now() - start });
+    persistUsage({
+      modelKey,
+      usage: { modelKey, inputTokens: 0, outputTokens: 0 },
+      purpose: opts.purpose,
+      durationMs: Date.now() - start,
+      success: false,
+      errorMessage: err instanceof Error ? err.message : String(err),
+    });
     throw err;
   }
 }

@@ -7,6 +7,14 @@
  *   COS_INGEST_TOKEN     bearer token
  *   COS_WATCH_DIR        defaults to ~/Desktop/chief of staff app
  *
+ * Env:
+ *   COS_URL              base URL (no trailing slash)
+ *   COS_INGEST_TOKEN     bearer token
+ *   COS_WATCH_DIR        defaults to ~/Desktop/chief of staff app
+ *
+ * Note: /api/ingest is exempt from the app's login gate (it authenticates with
+ * COS_INGEST_TOKEN), so no extra header is needed.
+ *
  * Behavior:
  *   - Watches the directory non-recursively for new *.json files
  *   - POSTs each file to ${COS_URL}/api/ingest

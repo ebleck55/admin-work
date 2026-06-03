@@ -102,3 +102,8 @@ export function modelForTask(task: Task, override?: ModelKey): ModelConfig {
   const key = override ?? DEFAULT_TASK_MODEL[task];
   return MODELS[key];
 }
+
+/** The model KEY (not config) a task routes to — used by callers of callClaude. */
+export function modelKeyForTask(task: Task, override?: ModelKey): ModelKey {
+  return override ?? DEFAULT_TASK_MODEL[task];
+}
