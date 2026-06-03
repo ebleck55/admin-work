@@ -15,6 +15,7 @@ import { and, eq, gte, inArray, isNull, or } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import { inngest } from "@/inngest/client";
 import { synthesize } from "@/lib/situations/synthesizer";
+import { loadPreferenceContext } from "@/lib/prompts/preference-context";
 
 const RECENT_SIGNAL_WINDOW_DAYS = 14;
 const MAX_UNGROUPED_SIGNALS = 60;
@@ -125,8 +126,12 @@ export const synthesizeSituations = inngest.createFunction(
       return { skipped: "no_input" };
     }
 
+    const preferenceContext = await step.run("load-preference-context", async () =>
+      loadPreferenceContext("synthesis"),
+    );
+
     const synthesized = await step.run("call-synthesizer", async () =>
-      synthesize({ ungroupedSignals, openSituations }),
+      synthesize({ ungroupedSignals, openSituations, preferenceContext }),
     );
 
     // Persist new situations

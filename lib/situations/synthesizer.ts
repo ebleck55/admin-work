@@ -222,6 +222,8 @@ export interface SynthesizeInput {
     entity: { id: string; kind: string; name: string } | null;
     lastSynthesizedAt: string | null;
   }>;
+  /** Phase 13d preference-context block. Empty string when no prefs/feedback exist. */
+  preferenceContext?: string;
 }
 
 function buildUserPrompt(input: SynthesizeInput): string {
@@ -259,11 +261,15 @@ export async function synthesize(
     return { new_situations: [], updates: [] };
   }
 
+  const systemExtra = input.preferenceContext
+    ? `${SYSTEM_EXTRA}\n\n${input.preferenceContext}\n\n${varietySeed()}`
+    : `${SYSTEM_EXTRA}\n\n${varietySeed()}`;
+
   let result;
   try {
     result = await callClaude({
       modelKey: "opus47",
-      system: systemPromptFor({ mode: "brief", extra: `${SYSTEM_EXTRA}\n\n${varietySeed()}` }),
+      system: systemPromptFor({ mode: "brief", extra: systemExtra }),
       cacheSystem: true,
       prompt: buildUserPrompt(input),
       maxTokens: 6000,

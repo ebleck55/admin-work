@@ -260,6 +260,11 @@ export const briefings = pgTable(
     audioUrl: text("audio_url"),
     status: briefingStatusEnum("status").default("partial").notNull(),
     signalIds: jsonb("signal_ids").$type<string[]>().default([]).notNull(),
+    situationIds: jsonb("situation_ids").$type<string[]>().default([]).notNull(),
+    influencingMemoryFactIds: jsonb("influencing_memory_fact_ids")
+      .$type<string[]>()
+      .default([])
+      .notNull(),
     sensitivity: sensitivityEnum("sensitivity").default("internal").notNull(),
     generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
     durationMs: integer("duration_ms"),
@@ -597,5 +602,27 @@ export const accountScores = pgTable(
   (t) => ({
     accountKindIdx: index("account_scores_account_kind_idx").on(t.accountId, t.kind),
     computedAtIdx: index("account_scores_computed_at_idx").on(t.computedAt),
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// briefing_runs — audit log of each daily briefing invocation (Phase 13a)
+// ---------------------------------------------------------------------------
+export const briefingRuns = pgTable(
+  "briefing_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    firedAt: timestamp("fired_at", { withTimezone: true }).defaultNow().notNull(),
+    forDate: text("for_date").notNull(),
+    signalCountToday: integer("signal_count_today").default(0).notNull(),
+    situationCountActive: integer("situation_count_active").default(0).notNull(),
+    outputChars: integer("output_chars").default(0).notNull(),
+    durationMs: integer("duration_ms"),
+    briefingId: uuid("briefing_id").references(() => briefings.id, { onDelete: "set null" }),
+    errorMessage: text("error_message"),
+    trigger: text("trigger"),
+  },
+  (t) => ({
+    firedAtIdx: index("briefing_runs_fired_at_idx").on(t.firedAt),
   }),
 );

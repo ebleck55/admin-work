@@ -73,6 +73,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const encoder = new TextEncoder();
   const client = new Anthropic({ apiKey: env().ANTHROPIC_API_KEY });
+  // Track streamed-but-unpersisted content so the catch block can salvage it
+  let assistantContentForCatch = "";
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -158,16 +160,24 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         for await (const chunk of sseStream) {
           if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
             assistantContent += chunk.delta.text;
+            assistantContentForCatch = assistantContent;
             controller.enqueue(encoder.encode(sseEvent("token", { delta: chunk.delta.text })));
           }
         }
         const final = await sseStream.finalMessage();
+        // Defensive: usage fields may be missing in some Anthropic responses
+        const fu = final.usage as {
+          input_tokens?: number;
+          output_tokens?: number;
+          cache_read_input_tokens?: number | null;
+          cache_creation_input_tokens?: number | null;
+        };
         recordGlobalUsage({
           modelKey: "sonnet46",
-          inputTokens: final.usage.input_tokens,
-          outputTokens: final.usage.output_tokens,
-          cacheReadTokens: final.usage.cache_read_input_tokens ?? 0,
-          cacheWriteTokens: final.usage.cache_creation_input_tokens ?? 0,
+          inputTokens: fu?.input_tokens ?? 0,
+          outputTokens: fu?.output_tokens ?? 0,
+          cacheReadTokens: fu?.cache_read_input_tokens ?? 0,
+          cacheWriteTokens: fu?.cache_creation_input_tokens ?? 0,
         });
 
         const assistantMsg = await db()
@@ -211,12 +221,35 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
           ),
         );
       } catch (err) {
+        const errMsg = err instanceof Error ? err.message : "Internal error";
+        console.error("[chat-stream] error:", errMsg, err);
+        // Salvage any streamed content into the conversation history so the
+        // failure is inspectable + the partial reply isn't lost.
+        try {
+          const partialBody =
+            assistantContentForCatch.length > 0
+              ? `${assistantContentForCatch}\n\n[stream error: ${errMsg}]`
+              : `[stream error before any tokens: ${errMsg}]`;
+          await db()
+            .insert(schema.messages)
+            .values({
+              conversationId,
+              role: "assistant",
+              content: partialBody,
+              usage: { error: errMsg },
+            });
+          await db()
+            .update(schema.conversations)
+            .set({ updatedAt: new Date() })
+            .where(eq(schema.conversations.id, conversationId));
+        } catch (persistErr) {
+          console.error(
+            "[chat-stream] also failed to persist error message:",
+            persistErr instanceof Error ? persistErr.message : persistErr,
+          );
+        }
         controller.enqueue(
-          encoder.encode(
-            sseEvent("error", {
-              message: err instanceof Error ? err.message : "Internal error",
-            }),
-          ),
+          encoder.encode(sseEvent("error", { message: errMsg })),
         );
       } finally {
         controller.close();
