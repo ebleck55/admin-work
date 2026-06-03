@@ -39,17 +39,20 @@ export function ChatThread({
   initialMessages,
   conversations,
   conversationTitle,
+  autoSubmitPrompt,
 }: {
   conversationId: string;
   initialMessages: Message[];
   conversations: ConversationSummary[];
   conversationTitle: string;
+  autoSubmitPrompt?: string;
 }) {
   const router = useRouter();
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [personal, setPersonal] = useState(false);
+  const autoSubmittedRef = useRef(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -158,6 +161,21 @@ export function ChatThread({
       setStreaming(false);
     }
   }, [input, streaming, personal, conversationId, router]);
+
+  // Phase 14b: if the page arrived with ?prompt=…, auto-send it once.
+  useEffect(() => {
+    if (
+      autoSubmitPrompt &&
+      !autoSubmittedRef.current &&
+      messages.length === 0 &&
+      !streaming
+    ) {
+      autoSubmittedRef.current = true;
+      setInput(autoSubmitPrompt);
+      // setInput is async; defer send to next tick so the input is populated
+      setTimeout(() => void send(), 0);
+    }
+  }, [autoSubmitPrompt, messages.length, streaming, send]);
 
   async function rememberThis(messageId: string, text: string) {
     const trimmed = text.slice(0, 600);

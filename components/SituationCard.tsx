@@ -93,6 +93,14 @@ export function SituationCard({ situation }: { situation: SituationCardData }) {
             Ask Claude →
           </Link>
           <Link
+            href={`/chat/from-situation/${situation.id}?prompt=${encodeURIComponent(
+              "Draft a Slack message AND an email to my team about resolving this situation. Match my voice from my prior memory facts and any preferences you've learned. One message per channel; lead with the ask.",
+            )}`}
+            className="rounded-md bg-white/80 px-2 py-1 font-medium text-slate-700 hover:bg-white"
+          >
+            Draft team comms →
+          </Link>
+          <Link
             href={`/situations/${situation.id}`}
             className="text-slate-500 hover:text-slate-800"
           >

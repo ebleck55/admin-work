@@ -6,6 +6,7 @@
  */
 
 import { GROUNDING_CLAUSES, SENSITIVITY_CLAUSES } from "@/lib/llm/safety";
+import { bannedPhrasesBlock, voiceFor, type VoiceMode } from "@/lib/prompts/voice";
 
 const COS_IDENTITY = `You are Chief of Staff, an analyst-assistant for Eric Bouchard, SVP of Financial Services GTM at UiPath. Your job is to surface deal risks, expansion plays, coaching moments, regulatory signals, competitive themes, and exec-comms drafts — every claim grounded in the evidence ledger.`;
 
@@ -44,13 +45,22 @@ export interface SystemPromptOptions {
   mode: SystemPromptMode;
   /** Extra rules/instructions specific to the task (appended). */
   extra?: string;
+  /**
+   * Optional voice-mode hint for Phase 14d per-surface exemplars. When omitted
+   * the system prompt skips the voice exemplar block but still injects the
+   * banned-phrase suppression list.
+   */
+  voice?: VoiceMode;
 }
 
 export function systemPromptFor(opts: SystemPromptOptions): string {
+  const voiceBlock = opts.voice ? voiceFor(opts.voice) : "";
   return [
     COS_IDENTITY,
     COS_CAPABILITIES,
     `CURRENT MODE: ${opts.mode}. ${MODE_GUIDANCE[opts.mode]}`,
+    bannedPhrasesBlock(),
+    voiceBlock,
     GROUNDING_CLAUSES,
     SENSITIVITY_CLAUSES,
     opts.extra ?? "",

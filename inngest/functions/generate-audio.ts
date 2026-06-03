@@ -42,7 +42,12 @@ export const generateAudio = inngest.createFunction(
       const { text } = await step.run("shrink-script", async () =>
         callClaude({
           modelKey: "haiku45",
-          system: systemPromptFor({ mode: "brief", extra: "Rewrite as a 90-second spoken script. No bullet points. Plain prose." }),
+          system: systemPromptFor({
+            mode: "brief",
+            voice: "spoken",
+            extra:
+              "Rewrite as a 90-second spoken script. No bullet points. No markdown. Plain prose. Use contractions. Pace for breath.",
+          }),
           prompt: `Compress to 90 seconds:\n\n${script}`,
           maxTokens: 1500,
           purpose: "audio-script",

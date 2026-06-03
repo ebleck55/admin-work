@@ -155,6 +155,7 @@ Compose a briefing in 4-6 short sections. Each section should advance one thread
             modelKey: "opus47",
             system: systemPromptFor({
               mode: "brief",
+              voice: "briefing",
               extra: preferenceContext
                 ? `${preferenceContext}\n\n${varietySeed()}`
                 : varietySeed(),

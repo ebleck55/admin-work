@@ -1,11 +1,17 @@
 /**
- * Record user feedback on a signal or situation. Feeds into Phase 10's
- * grader-tuning loop (and into future "Eric never wants this kind of
- * signal" preference learning).
+ * Record user feedback on a signal or situation, AND — for situation
+ * rejections — fan out into a durable memory_fact so future synthesis
+ * runs naturally suppress similar candidates via embedding similarity.
+ *
+ * Phase 10 added the table; Phase 14a closes the loop end-to-end.
  */
+
+import { eq } from "drizzle-orm";
 
 import { ClientError, withHandler } from "@/lib/api/handler";
 import { db, schema } from "@/lib/db/client";
+import { addMemoryFact } from "@/lib/chat/memory";
+import { inngest } from "@/inngest/client";
 
 export const runtime = "nodejs";
 
@@ -39,5 +45,55 @@ export const POST = withHandler(async (req) => {
     })
     .returning({ id: schema.feedback.id });
 
-  return { id: inserted[0].id };
+  const feedbackId = inserted[0].id;
+
+  // Phase 14a: rejection on a situation becomes a durable memory_fact so the
+  // synthesizer can suppress similar candidates via embedding similarity.
+  let memoryFactId: string | undefined;
+  if (
+    body.targetKind === "situation" &&
+    (body.valence === "down" || body.valence === "not_relevant") &&
+    body.reasonCategory
+  ) {
+    try {
+      const sitRows = await db()
+        .select({
+          title: schema.situations.title,
+          severity: schema.situations.severity,
+          sensitivity: schema.situations.sensitivity,
+        })
+        .from(schema.situations)
+        .where(eq(schema.situations.id, body.targetId))
+        .limit(1);
+      const sit = sitRows[0];
+      if (sit) {
+        const reasonClause = body.reasonText
+          ? `${body.reasonCategory} — ${body.reasonText.slice(0, 200)}`
+          : body.reasonCategory;
+        const factText = `Eric rejected the situation "${sit.title}" because ${reasonClause}. Don't surface situations like this again.`;
+        const fact = await addMemoryFact({
+          kind: "preference",
+          text: factText,
+          sensitivity: sit.sensitivity,
+          weight: 1.5, // explicit rejection weighs higher than implicit context
+        });
+        memoryFactId = fact.id;
+      }
+    } catch (err) {
+      console.error("[feedback] memory_fact fanout failed:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  // Phase 15a: fire an inference event so a downstream Inngest function can
+  // distill a more general preference from the feedback corpus over time.
+  void inngest
+    .send({ name: "feedback/inserted", data: { feedbackId } })
+    .catch((err) =>
+      console.error(
+        "[feedback] inngest fanout failed:",
+        err instanceof Error ? err.message : err,
+      ),
+    );
+
+  return { id: feedbackId, memoryFactId };
 });

@@ -21,6 +21,7 @@ export const sourceSystemEnum = pgEnum("source_system", [
   "zoom",
   "salesforce",
   "context_note",
+  "web_research",
 ]);
 
 export const sensitivityEnum = pgEnum("sensitivity", ["public", "internal", "private_dm"]);

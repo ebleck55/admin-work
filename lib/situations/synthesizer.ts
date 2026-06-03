@@ -269,7 +269,7 @@ export async function synthesize(
   try {
     result = await callClaude({
       modelKey: "opus47",
-      system: systemPromptFor({ mode: "brief", extra: systemExtra }),
+      system: systemPromptFor({ mode: "brief", voice: "narrative", extra: systemExtra }),
       cacheSystem: true,
       prompt: buildUserPrompt(input),
       maxTokens: 6000,

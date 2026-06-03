@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
+import { AccountResearchPanel } from "@/components/AccountResearchPanel";
+
 import { db, schema } from "@/lib/db/client";
 
 export const dynamic = "force-dynamic";
@@ -108,6 +110,20 @@ async function loadAccountDetail(id: string) {
     if (!latestScoreByKind.has(s.kind)) latestScoreByKind.set(s.kind, s);
   }
 
+  // Phase 14c: most-recent external research evidence ledger row
+  const researchRows = await database
+    .select({
+      id: schema.evidenceLedger.id,
+      collectedAt: schema.evidenceLedger.collectedAt,
+      rawPayload: schema.evidenceLedger.rawPayload,
+    })
+    .from(schema.evidenceLedger)
+    .where(
+      sql`${schema.evidenceLedger.sourceSystem} = 'web_research' AND ${schema.evidenceLedger.rawPayload}->>'account_id' = ${id}`,
+    )
+    .orderBy(desc(schema.evidenceLedger.collectedAt))
+    .limit(1);
+
   return {
     account,
     signals: signalRows,
@@ -115,6 +131,7 @@ async function loadAccountDetail(id: string) {
     sourceCounts,
     opps: oppNames,
     scores: Array.from(latestScoreByKind.values()),
+    research: researchRows[0] ?? null,
   };
 }
 
@@ -191,6 +208,22 @@ export default async function AccountDetailPage({ params }: { params: Promise<{ 
           })}
         </section>
       ) : null}
+
+      <AccountResearchPanel
+        accountId={data.account.id}
+        existing={
+          data.research
+            ? {
+                id: data.research.id,
+                collectedAt:
+                  typeof data.research.collectedAt === "string"
+                    ? data.research.collectedAt
+                    : new Date(data.research.collectedAt).toISOString(),
+                payload: (data.research.rawPayload as Record<string, unknown>) as never,
+              }
+            : null
+        }
+      />
 
       <section className="mb-10">
         <h2 className="mb-3 text-lg font-medium text-slate-900">Signals</h2>

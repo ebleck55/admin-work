@@ -8,10 +8,13 @@ export const dynamic = "force-dynamic";
 
 export default async function ConversationPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ prompt?: string }>;
 }) {
   const { id } = await params;
+  const { prompt } = await searchParams;
   const convoRows = await db()
     .select()
     .from(schema.conversations)
@@ -41,6 +44,7 @@ export default async function ConversationPage({
     <ChatThread
       conversationId={id}
       conversationTitle={convo.title}
+      autoSubmitPrompt={prompt}
       initialMessages={msgs.map((m) => ({
         id: m.id,
         role: m.role,

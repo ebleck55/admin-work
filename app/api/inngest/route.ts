@@ -10,6 +10,7 @@ import {
   generateMeetingPrep,
   resolveEntities,
   scoreAccountsWeekly,
+  researchAccountFn,
 } from "@/inngest/functions";
 
 export const runtime = "nodejs";
@@ -26,5 +27,6 @@ export const { GET, POST, PUT } = serve({
     generateMeetingPrep,
     resolveEntities,
     scoreAccountsWeekly,
+    researchAccountFn,
   ],
 });

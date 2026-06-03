@@ -40,4 +40,10 @@ export type AppEvents = {
   "scoring/account.requested": {
     data: { accountId?: string };
   };
+  "research/account.requested": {
+    data: { accountId: string };
+  };
+  "feedback/inserted": {
+    data: { feedbackId: string };
+  };
 };

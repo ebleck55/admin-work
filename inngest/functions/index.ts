@@ -6,3 +6,4 @@ export { synthesizeSituations } from "@/inngest/functions/synthesize-situations"
 export { generateMeetingPrep } from "@/inngest/functions/generate-meeting-prep";
 export { resolveEntities } from "@/inngest/functions/resolve-entities";
 export { scoreAccountsWeekly } from "@/inngest/functions/score-accounts";
+export { researchAccountFn } from "@/inngest/functions/research-account";
