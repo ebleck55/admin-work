@@ -12,6 +12,13 @@ const EnvSchema = z.object({
   COS_INGEST_TOKEN: z.string().min(16),
   CRON_SECRET: z.string().min(1).optional(),
 
+  // Hard daily LLM spend cap (USD). Optional; the budget guard defaults to 50 if unset.
+  COS_DAILY_USD_CAP: z.coerce.number().positive().optional(),
+
+  // Vercel "Protection Bypass for Automation" secret — lets machine callers (Codex ingest
+  // connectors, Inngest) reach the deployment after Vercel Password Protection is enabled.
+  VERCEL_AUTOMATION_BYPASS_SECRET: z.string().min(1).optional(),
+
   BLOB_READ_WRITE_TOKEN: z.string().min(1).optional(),
 
   INNGEST_EVENT_KEY: z.string().min(1).optional(),

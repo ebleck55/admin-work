@@ -7,6 +7,15 @@
  *   COS_INGEST_TOKEN     bearer token
  *   COS_WATCH_DIR        defaults to ~/Desktop/chief of staff app
  *
+ * Env:
+ *   COS_URL              base URL (no trailing slash)
+ *   COS_INGEST_TOKEN     bearer token
+ *   COS_WATCH_DIR        defaults to ~/Desktop/chief of staff app
+ *   VERCEL_AUTOMATION_BYPASS_SECRET
+ *                        Vercel "Protection Bypass for Automation" secret. Required once
+ *                        Vercel Password Protection is enabled, so this machine caller can
+ *                        get past the gate. Sent as the x-vercel-protection-bypass header.
+ *
  * Behavior:
  *   - Watches the directory non-recursively for new *.json files
  *   - POSTs each file to ${COS_URL}/api/ingest
@@ -21,6 +30,7 @@ import os from "node:os";
 
 const COS_URL = process.env.COS_URL || "http://localhost:3000";
 const TOKEN = process.env.COS_INGEST_TOKEN || "";
+const BYPASS_SECRET = process.env.VERCEL_AUTOMATION_BYPASS_SECRET || "";
 const WATCH_DIR =
   process.env.COS_WATCH_DIR ||
   path.join(os.homedir(), "Desktop", "chief of staff app");
@@ -62,12 +72,15 @@ async function upload(file) {
     url = `${COS_URL}/api/ingest`;
     contentType = "application/json";
   }
+  const headers = {
+    "Content-Type": contentType,
+    Authorization: `Bearer ${TOKEN}`,
+  };
+  // Get past Vercel Password Protection (no-op when the gate isn't enabled).
+  if (BYPASS_SECRET) headers["x-vercel-protection-bypass"] = BYPASS_SECRET;
   const res = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": contentType,
-      Authorization: `Bearer ${TOKEN}`,
-    },
+    headers,
     body,
   });
   const text = await res.text();

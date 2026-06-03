@@ -25,6 +25,7 @@ import { buildEvidenceBlock } from "@/lib/prompts/evidence-block";
 import { varietySeed } from "@/lib/prompts/variety";
 import { MODELS } from "@/lib/llm/router";
 import { recordGlobalUsage } from "@/lib/llm/cost-tracker";
+import { assertWithinBudget, persistUsage } from "@/lib/llm/budget";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -87,6 +88,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
           .where(eq(schema.messages.conversationId, conversationId))
           .orderBy(asc(schema.messages.createdAt));
         const historyMinusLatest = history.slice(0, -1).slice(-HISTORY_LIMIT);
+
+        // Soft budget check: interactive chat is essential (won't hard-block) but still
+        // drives the threshold alerts.
+        await assertWithinBudget({ essential: true, purpose: "chat" });
 
         // Retrieval: evidence chunks + memory facts (parallel)
         const [evidenceHits, memoryHits] = await Promise.all([
@@ -174,13 +179,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
           cache_read_input_tokens?: number | null;
           cache_creation_input_tokens?: number | null;
         };
-        recordGlobalUsage({
-          modelKey: "sonnet46",
+        const chatUsage = {
+          modelKey: "sonnet46" as const,
           inputTokens: fu?.input_tokens ?? 0,
           outputTokens: fu?.output_tokens ?? 0,
           cacheReadTokens: fu?.cache_read_input_tokens ?? 0,
           cacheWriteTokens: fu?.cache_creation_input_tokens ?? 0,
-        });
+        };
+        recordGlobalUsage(chatUsage);
+        persistUsage({ modelKey: "sonnet46", usage: chatUsage, purpose: "chat", success: true });
 
         const assistantMsg = await db()
           .insert(schema.messages)

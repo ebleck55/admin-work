@@ -16,6 +16,7 @@ import { inngest } from "@/inngest/client";
 import { callClaude } from "@/lib/llm/anthropic";
 import { systemPromptFor } from "@/lib/prompts/system";
 import { dropIneligible } from "@/lib/llm/safety";
+import { verifyFacts, unverifiedFooterMd } from "@/lib/llm/verify";
 import { varietySeed } from "@/lib/prompts/variety";
 import {
   getInfluencingPreferenceFactIds,
@@ -183,6 +184,19 @@ Compose a briefing in 4-6 short sections. Each section should advance one thread
           }),
         );
         briefingMd = opusResult.text;
+
+        // Fact-verification pass: flag any figure/quote/date in the briefing that isn't
+        // supported by the situations/signals it was built from. Unverified spans are
+        // appended as a visible footer so Eric confirms them before sharing.
+        const verify = await step.run("verify-facts", async () =>
+          verifyFacts({
+            generated: briefingMd,
+            evidence: `${situationsBlock}\n\n${signalsBlock}`,
+          }),
+        );
+        if (!verify.verified) {
+          briefingMd += unverifiedFooterMd(verify.unverified);
+        }
       } catch (err) {
         errorMessage = err instanceof Error ? err.message : String(err);
         console.error("[generate-briefing] opus call failed:", errorMessage);

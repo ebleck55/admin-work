@@ -22,6 +22,7 @@ import { buildEvidenceBlock } from "@/lib/prompts/evidence-block";
 import { varietySeed } from "@/lib/prompts/variety";
 import { MODELS } from "@/lib/llm/router";
 import { recordGlobalUsage } from "@/lib/llm/cost-tracker";
+import { assertWithinBudget, persistUsage } from "@/lib/llm/budget";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -57,6 +58,9 @@ export async function POST(req: NextRequest) {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
+        // Soft budget check (interactive → essential, alerts only).
+        await assertWithinBudget({ essential: true, purpose: "ask" });
+
         // 1. Retrieve evidence
         const hits = await searchEvidence(body.question, {
           limit: 8,
@@ -133,13 +137,15 @@ export async function POST(req: NextRequest) {
           }
         }
         const final = await sseStream.finalMessage();
-        recordGlobalUsage({
-          modelKey: "sonnet46",
+        const askUsage = {
+          modelKey: "sonnet46" as const,
           inputTokens: final.usage.input_tokens,
           outputTokens: final.usage.output_tokens,
           cacheReadTokens: final.usage.cache_read_input_tokens ?? 0,
           cacheWriteTokens: final.usage.cache_creation_input_tokens ?? 0,
-        });
+        };
+        recordGlobalUsage(askUsage);
+        persistUsage({ modelKey: "sonnet46", usage: askUsage, purpose: "ask", success: true });
         controller.enqueue(
           encoder.encode(
             sseEvent("done", {

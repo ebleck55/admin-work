@@ -60,6 +60,11 @@ function computeCost(usage: UsageRecord): number {
   return inputCost + outputCost + cacheReadCost + cacheWriteCost;
 }
 
+/** Public estimator used by the DB-persisted ledger (llm_usage) and the budget guard. */
+export function estimateCostUsd(usage: UsageRecord): number {
+  return computeCost(usage);
+}
+
 function addToEntry(target: Record<string, CostEntry>, usage: UsageRecord): void {
   const key = usage.modelKey;
   if (!target[key]) {
